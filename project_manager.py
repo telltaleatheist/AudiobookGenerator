@@ -2,7 +2,7 @@
 """
 Project Manager - Clean project and configuration management
 Handles project creation, source files, batch naming, and config inheritance
-Updated with automatic voice sample pairing for F5/XTTS
+Updated with automatic voice sample pairing for F5/XTTS and PDF support
 """
 
 import os
@@ -39,13 +39,13 @@ class ProjectManager:
         readme = f"""# Audiobook Project: {name}
 
 ## Usage
-- Place source files (.epub, .txt) in `source/`
+- Place source files (.epub, .pdf, .txt) in `source/`
 - Place voice samples (.wav, .mp3) in `samples/` for voice cloning
 - Run: `python AudiobookGenerator.py --project {name}`
 - Process sections: `python AudiobookGenerator.py --project {name} --sections 1 2 3`
 
 ## Structure
-- `source/` - Input files
+- `source/` - Input files (.epub, .pdf, .txt)
 - `samples/` - Voice reference audio files for cloning
 - `config/` - Batch configurations
 - `jobs/` - Processing outputs (batches/sections)
@@ -74,7 +74,21 @@ class ProjectManager:
         project_dir = self.validate_project(project_name)
         source_dir = project_dir / "source"
         
-        files = list(source_dir.glob("*.epub")) + list(source_dir.glob("*.txt"))
+        # Look for files with both lowercase and uppercase extensions
+        files = []
+        for ext in ['.epub', '.txt', '.pdf']:
+            files.extend(list(source_dir.glob(f"*{ext}")))
+            files.extend(list(source_dir.glob(f"*{ext.upper()}")))
+        
+        # Remove duplicates while preserving order
+        unique_files = []
+        seen = set()
+        for f in files:
+            if f not in seen:
+                unique_files.append(f)
+                seen.add(f)
+        files = unique_files
+        
         if not files:
             raise ValueError(f"No source files in {source_dir}")
         
@@ -103,7 +117,8 @@ class ProjectManager:
         if not input_path.exists():
             raise ValueError(f"File not found: {input_file}")
         
-        if input_path.suffix.lower() not in ['.epub', '.txt']:
+        # Check file extension (case insensitive)
+        if input_path.suffix.lower() not in ['.epub', '.txt', '.pdf']:
             raise ValueError(f"Unsupported file type: {input_path.suffix}")
         
         dest = source_dir / input_path.name
@@ -308,8 +323,7 @@ class ProjectManager:
                 'rate': '+0%',
                 'pitch': '+0Hz',
                 'volume': '+0%',
-                'delay': 1.5,
-                'use_ssml': False
+                'delay': 1.5
             },
             'f5': {
                 'model_type': 'F5-TTS',
@@ -494,10 +508,18 @@ class ProjectManager:
             edge = config['edge']
             print(f"🎙️ Voice: {edge['voice']}")
             print(f"⚡ Rate: {edge['rate']}, Pitch: {edge['pitch']}")
-        else:
+        elif engine == 'bark':
             bark = config['bark']
             print(f"🎙️ Voice: {bark['voice']}")
             print(f"🌡️ Temps: text={bark['text_temp']}, waveform={bark['waveform_temp']}")
+        elif engine == 'f5':
+            f5 = config['f5']
+            print(f"🎙️ Model: {f5['model_name']}")
+            print(f"⚡ Speed: {f5['speed']}x")
+        elif engine == 'xtts':
+            xtts = config['xtts']
+            print(f"🎙️ Model: {xtts['model_name']}")
+            print(f"⚡ Speed: {xtts['speed']}x")
         
         print(f"🎭 RVC Model: {config['rvc']['model']}")
         print(f"⚡ Speed: {config['rvc']['speed_factor']}x")

@@ -2,18 +2,19 @@
 """
 XTTS Engine - Coqui XTTS processor with multilingual support
 Handles voice cloning and synthesis with built-in voices
+Pronunciation fixes now handled in preprocessing
 """
 
 import sys
 import re
 import time
-import torch
+import torch # type: ignore
 from pathlib import Path
 
 # XTTS imports
 try:
-    from TTS.api import TTS
-    import torchaudio
+    from TTS.api import TTS # type: ignore
+    import torchaudio # type: ignore
     XTTS_AVAILABLE = True
 except ImportError:
     XTTS_AVAILABLE = False
@@ -39,51 +40,6 @@ def get_xtts_default_config():
             'gpu_acceleration': True
         }
     }
-
-def apply_xtts_pronunciation_fixes(text):
-    """Apply XTTS-specific pronunciation fixes"""
-    pronunciation_fixes = {
-        # Common mispronunciations
-        "colonel": "kernel",
-        "hierarchy": "hiyerarkey", 
-        "epitome": "ihpitomee",
-        "hyperbole": "hyperbolee",
-        "cache": "cash",
-        "niche": "neesh", 
-        "facade": "fasahd",
-        "gauge": "gayj",
-        "receipt": "reeseet",
-        
-        # Religious/philosophical terms
-        "atheist": "aytheeist",
-        "atheists": "aytheeists", 
-        "atheism": "aytheeism",
-        
-        # Historical terms
-        "bourgeois": "boorzhwah",
-        "regime": "rehzheem", 
-        "fascism": "fashism",
-        "Nazi": "notsee",
-        "Nazis": "notsees",
-        
-        # Geographic names
-        "Worcester": "wuster",
-        "Leicester": "lester", 
-        "Arkansas": "arkansaw"
-    }
-    
-    fixes_applied = 0
-    for word, replacement in pronunciation_fixes.items():
-        pattern = r'\b' + re.escape(word) + r'\b'
-        before_count = len(re.findall(pattern, text, flags=re.IGNORECASE))
-        if before_count > 0:
-            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-            fixes_applied += before_count
-    
-    if fixes_applied > 0:
-        print(f"STATUS: Applied {fixes_applied} XTTS pronunciation fixes", file=sys.stderr)
-    
-    return text
 
 def chunk_text_for_xtts(text, max_chars=400):
     """Split text into chunks optimized for XTTS"""
@@ -270,12 +226,9 @@ def process_xtts_text_file(text_file, output_dir, config, paths):
         print("💡 Add .wav files to project/samples/ directory", file=sys.stderr)
         return []
     
-    # Read clean text
+    # Read clean text (already processed in preprocessing)
     with open(text_file, 'r', encoding='utf-8') as f:
         text = f.read().strip()
-    
-    # Apply XTTS-specific processing
-    text = apply_xtts_pronunciation_fixes(text)
     
     # Chunk text for XTTS
     chunks = chunk_text_for_xtts(text, xtts_config['chunk_max_chars'])

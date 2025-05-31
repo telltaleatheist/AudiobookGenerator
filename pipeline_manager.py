@@ -209,19 +209,23 @@ class PipelineManager:
 
     def _run_rvc_conversion(self, paths, config, skip_rvc):
         if self._is_phase_complete('rvc_conversion') or skip_rvc:
-            print("✅ RVC Conversion skipped or already complete")
+            if skip_rvc:
+                print("✅ RVC Conversion skipped")
+                # Copy combined file to final location
+                shutil.copy2(paths['combined'], paths['final'])
+            else:
+                print("✅ RVC Conversion already complete")
             return True
 
         print(f"\n🎧 Phase 4: RVC Conversion")
 
         try:
             from audio_processor import process_audio_through_rvc
-            rvc_output_path = paths['final']
-            rvc_success = process_audio_through_rvc(paths['combined'], rvc_output_path, config)
+            rvc_success = process_audio_through_rvc(paths['combined'], paths['final'], config)
 
             if rvc_success:
                 self._mark_phase_complete('rvc_conversion', {
-                    'converted': str(rvc_output_path)
+                    'converted': str(paths['final'])
                 })
                 return True
 

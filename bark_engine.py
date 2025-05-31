@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
 Bark Engine - Fine-tuned Bark TTS processor
-Handles pronunciation fixes, model reloading, and artifact detection
+Handles model reloading and artifact detection
+Pronunciation fixes now handled in preprocessing
 """
 
 import sys
 import re
 import time
 import random
-import numpy as np
+import numpy as np # type: ignore
 import gc
 from pathlib import Path
 
 # Audio processing
 try:
-    from scipy.io.wavfile import write as write_wav
+    from scipy.io.wavfile import write as write_wav # type: ignore
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
@@ -22,8 +23,8 @@ except ImportError:
 
 # Bark imports
 try:
-    import torch
-    from bark import SAMPLE_RATE, generate_audio, preload_models
+    import torch # type: ignore
+    from bark import SAMPLE_RATE, generate_audio, preload_models # type: ignore
     BARK_AVAILABLE = True
 except ImportError:
     BARK_AVAILABLE = False
@@ -44,64 +45,6 @@ def get_bark_default_config():
             'padding_format': '. {text}.'
         }
     }
-
-def apply_bark_pronunciation_fixes(text):
-    """Apply Bark-specific pronunciation fixes using phonetic spelling"""
-    pronunciation_fixes = {
-        # Religious/philosophical terms - NO HYPHENS to avoid pauses in Bark
-        "atheist": "aytheeist",
-        "atheists": "aytheeists", 
-        "atheism": "aytheeism",
-        "Jehovah's": "jehovas",
-        
-        # Common problem words - no hyphens/dashes
-        "colonel": "kernel",
-        "hierarchy": "hiyerarkey",
-        "epitome": "ihpitomee",
-        "hyperbole": "hyperbolee",
-        "cache": "cash",
-        "niche": "neesh",
-        "facade": "fasahd",
-        "gauge": "gayj",
-        "receipt": "reeseet",
-        "height": "hite",
-        "leisure": "leezhur",
-        
-        # Religious/historical terms - no hyphens
-        "bourgeois": "boorzhwah",
-        "rendezvous": "rondayvoo",
-        "regime": "rehzheem",
-        "fascism": "fashism",
-        "Nazi": "notsee",
-        "Nazis": "notsees",
-        "Aryan": "airy an",
-        "pundits": "pundits",
-        "ambiguous": "ambigyoous",
-        "Christianity": "christianity",
-        "religious": "rihliljus",
-        
-        # Geographic/names - no hyphens
-        "Worcester": "wuster",
-        "Leicester": "lester",
-        "Arkansas": "arkansaw"
-    }
-    
-    fixes_applied = 0
-    for word, replacement in pronunciation_fixes.items():
-        pattern = r'\b' + re.escape(word) + r'\b'
-        before_count = len(re.findall(pattern, text, flags=re.IGNORECASE))
-        if before_count > 0:
-            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-            fixes_applied += before_count
-    
-    # Remove problematic names that cause repetition
-    text = re.sub(r'\s+Owen Morgan\.?\s*$', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\s+[A-Z][a-z]+\s+[A-Z][a-z]+\.?\s*$', '', text)
-    
-    if fixes_applied > 0:
-        print(f"STATUS: Applied {fixes_applied} Bark pronunciation fixes", file=sys.stderr)
-    
-    return text
 
 def chunk_text_for_bark(text, max_chars=200):
     """Split text into chunks that Bark can handle without truncation"""
@@ -306,12 +249,9 @@ def process_bark_text_file(text_file, output_dir, config, paths):
     print(f"STATUS: Voice: {bark_config['voice']}")
     print(f"STATUS: Temps: text={bark_config['text_temp']}, waveform={bark_config['waveform_temp']}", file=sys.stderr)
     
-    # Read clean text
+    # Read clean text (already processed in preprocessing)
     with open(text_file, 'r', encoding='utf-8') as f:
         text = f.read().strip()
-    
-    # Apply Bark-specific processing
-    text = apply_bark_pronunciation_fixes(text)
     
     # Chunk text for Bark
     chunks = chunk_text_for_bark(text, bark_config['chunk_max_chars'])

@@ -2,6 +2,7 @@
 """
 AudiobookGenerator - Clean project-based audiobook generation
 Simple, focused command-line interface for audiobook processing
+Updated with hierarchical PDF chapter support
 """
 
 import sys
@@ -14,7 +15,7 @@ from pipeline_manager import PipelineManager
 def create_parser():
     """Create argument parser"""
     parser = argparse.ArgumentParser(
-        description="Project-based audiobook generation",
+        description="Project-based audiobook generation with hierarchical chapter support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -26,17 +27,19 @@ Examples:
   
   # Process with new input file
   python AudiobookGenerator.py --project mybook --input book.epub
+  python AudiobookGenerator.py --project mybook --input document.pdf
   
-  # Process specific sections
+  # Process specific chapters (PDF) or sections (EPUB)
+  python AudiobookGenerator.py --project mybook --chapters 1 2 3
   python AudiobookGenerator.py --project mybook --sections 1 2 3
   
-  # Interactive start point selection
+  # Interactive hierarchical start point selection (Chapter → Page → Word for PDFs)
   python AudiobookGenerator.py --project mybook --interactive-start
   
   # Use existing config
   python AudiobookGenerator.py --project mybook --config batch1.json
   
-  # List sections
+  # List chapters/sections/pages
   python AudiobookGenerator.py --project mybook --list
         """
     )
@@ -52,14 +55,16 @@ Examples:
                        help="TTS engine (default: bark)")
     
     # Processing options
+    parser.add_argument("--chapters", nargs="*", type=str,
+                       help="Chapters to process for PDF files (e.g., 1 2 3 or 1-5)")
     parser.add_argument("--sections", nargs="*", type=str,
-                       help="Sections to process (e.g., 1 2 3 or 1-5)")
+                       help="Sections to process for EPUB files (e.g., 1 2 3 or 1-5)")
     parser.add_argument("--list", action="store_true", 
-                       help="List available sections")
+                       help="List available chapters/sections/pages")
     parser.add_argument("--skip-rvc", action="store_true", 
                        help="Skip RVC conversion")
     parser.add_argument("--interactive-start", action="store_true",
-                       help="Show text sections and choose where to start processing")
+                       help="Interactive start point selection (hierarchical for PDFs)")
     
     # Config overrides
     parser.add_argument("--voice", help="Voice model")
@@ -149,41 +154,73 @@ def create_cli_overrides(args):
     
     return overrides if overrides else None
 
-def validate_sections(source_file, sections):
-    """Validate sections exist in source file"""
+def validate_sections(source_file, sections, section_type="sections"):
+    """Validate sections/chapters exist in source file"""
     if not sections:
         return True
     
     source_path = Path(source_file)
-    if source_path.suffix.lower() != '.epub':
-        print("❌ Section selection only available for EPUB files")
+    suffix = source_path.suffix.lower()
+    
+    if suffix not in ['.epub', '.pdf']:
+        print(f"❌ {section_type.title()} selection only available for EPUB and PDF files")
         return False
     
     try:
-        # Try to get section count (this would need the preprocessing module)
-        # For now, just assume sections are valid
-        print(f"✅ Processing sections: {sections}")
+        if suffix == '.epub':
+            from preprocessing import get_epub_section_count
+            total_sections = get_epub_section_count(source_file)
+            section_label = "section"
+        elif suffix == '.pdf':
+            if section_type == "chapters":
+                from preprocessing import get_pdf_chapter_count
+                total_sections = get_pdf_chapter_count(source_file)
+                section_label = "chapter"
+            else:
+                from preprocessing import get_pdf_page_count
+                total_sections = get_pdf_page_count(source_file)
+                section_label = "page"
+        
+        for section in sections:
+            if section < 1 or section > total_sections:
+                print(f"❌ {section_label.title()} {section} out of range (available: 1-{total_sections})")
+                return False
+        
+        print(f"✅ Processing {section_label}s: {sections}")
         return True
+        
+    except ImportError:
+        print("⚠️ Could not validate sections (missing dependencies)")
+        return True  # Allow processing to continue
     except Exception as e:
         print(f"⚠️ Could not validate sections: {e}")
         return True  # Allow processing to continue
 
 def handle_list_sections(project_manager, project_name):
-    """List available sections in source file"""
+    """List available chapters/sections/pages in source file"""
     try:
         source_file = project_manager.find_source_file(project_name)
         
-        if source_file.suffix.lower() != '.epub':
-            print("❌ Section listing only available for EPUB files")
-            return False
+        suffix = source_file.suffix.lower()
         
-        # Use our new text_extractor
-        try:
-            from preprocessing import list_epub_sections
-            list_epub_sections(source_file, output_json=False)
-            return True
-        except ImportError:
-            print("❌ Section listing requires: pip install ebooklib beautifulsoup4")
+        if suffix == '.epub':
+            try:
+                from preprocessing import list_epub_sections
+                list_epub_sections(source_file, output_json=False)
+                return True
+            except ImportError:
+                print("❌ Section listing requires: pip install ebooklib beautifulsoup4")
+                return False
+        elif suffix == '.pdf':
+            try:
+                from preprocessing import list_pdf_sections
+                list_pdf_sections(source_file, output_json=False)
+                return True
+            except ImportError:
+                print("❌ PDF chapter listing requires: pip install pymupdf")
+                return False
+        else:
+            print("❌ Section listing only available for EPUB and PDF files")
             return False
         
     except Exception as e:
@@ -201,46 +238,56 @@ def handle_interactive_start(project_manager, project_name, sections=None):
             start_info = interactive_start_selection(source_file, sections)
             return start_info
         except ImportError:
-            print("❌ Interactive start requires: pip install ebooklib beautifulsoup4")
+            suffix = Path(source_file).suffix.lower()
+            if suffix == '.epub':
+                print("❌ Interactive start requires: pip install ebooklib beautifulsoup4")
+            elif suffix == '.pdf':
+                print("❌ Interactive start requires: pip install pymupdf")
+            else:
+                print("❌ Interactive start requires additional dependencies")
             return None
         
     except Exception as e:
         print(f"❌ {e}")
         return None
 
-def validate_sections(source_file, sections):
-    """Validate sections exist in source file"""
-    if not sections:
-        return True
+def determine_section_type_and_values(args, source_file):
+    """Determine whether to use chapters or sections based on file type and arguments"""
+    suffix = Path(source_file).suffix.lower()
     
-    source_path = Path(source_file)
-    if source_path.suffix.lower() != '.epub':
-        print("❌ Section selection only available for EPUB files")
-        return False
+    # Parse arguments
+    chapters = parse_sections(args.chapters) if args.chapters else None
+    sections = parse_sections(args.sections) if args.sections else None
     
-    try:
-        from text_extractor import get_epub_section_count
-        total_sections = get_epub_section_count(source_file)
-        
-        for section in sections:
-            if section < 1 or section > total_sections:
-                print(f"❌ Section {section} out of range (available: 1-{total_sections})")
-                return False
-        
-        print(f"✅ Processing sections: {sections}")
-        return True
-        
-    except ImportError:
-        print("⚠️ Could not validate sections (missing dependencies)")
-        return True  # Allow processing to continue
-    except Exception as e:
-        print(f"⚠️ Could not validate sections: {e}")
-        return True  # Allow processing to continue implemented in this refactor)")
-        return True
-        
-    except Exception as e:
-        print(f"❌ {e}")
-        return False
+    # Validation logic
+    if suffix == '.pdf':
+        if chapters and sections:
+            print("❌ Cannot specify both --chapters and --sections for PDF files")
+            return None, None
+        elif chapters:
+            return chapters, "chapters"
+        elif sections:
+            print("💡 Using --sections as page numbers for PDF file")
+            return sections, "pages"
+        else:
+            return None, None
+    
+    elif suffix == '.epub':
+        if chapters and sections:
+            print("❌ Cannot specify both --chapters and --sections for EPUB files")
+            return None, None
+        elif chapters:
+            print("💡 EPUB files use sections, not chapters. Using --chapters as section numbers")
+            return chapters, "sections"
+        elif sections:
+            return sections, "sections"
+        else:
+            return None, None
+    
+    else:  # .txt files
+        if chapters or sections:
+            print("⚠️ Section/chapter selection not supported for TXT files")
+        return None, None
 
 def main():
     parser = create_parser()
@@ -275,10 +322,15 @@ def main():
         else:
             source_file = project_manager.find_source_file(args.project)
         
-        # Parse and validate sections
-        sections = parse_sections(args.sections)
-        if sections and not validate_sections(source_file, sections):
-            return 1
+        # Determine section type and values
+        sections, section_type = determine_section_type_and_values(args, source_file)
+        if args.chapters or args.sections:
+            if sections is None:
+                return 1  # Error already printed
+            
+            # Validate sections/chapters
+            if not validate_sections(source_file, sections, section_type):
+                return 1
         
         # Handle interactive start selection
         start_info = None
@@ -329,8 +381,45 @@ def main():
         print(f"🎤 TTS Engine: {args.tts_engine.upper()}")
         
         if start_info:
-            word_display = f", Word {start_info['word']}" if start_info.get('word', 1) > 1 else ""
-            print(f"🎯 Start: Section {start_info['section']}, Subsection {start_info['subsection']}{word_display}")
+            file_type = Path(source_file).suffix.lower()
+            selection_type = start_info.get('selection_type', 'unknown')
+            
+            if selection_type == 'hierarchical_pdf':
+                chapter = start_info.get('chapter', '?')
+                chapter_title = start_info.get('chapter_title', 'Unknown')
+                page_in_chapter = start_info.get('page_in_chapter', '?')
+                absolute_page = start_info.get('absolute_page', '?')
+                word = start_info.get('word', 1)
+                
+                # Truncate long chapter titles
+                if len(chapter_title) > 40:
+                    chapter_title = chapter_title[:37] + "..."
+                
+                print(f"🎯 Start: Chapter {chapter}, Page {page_in_chapter} (Doc Page {absolute_page}), Word {word}")
+                print(f"📖 Chapter: '{chapter_title}'")
+                
+            elif selection_type == 'page_based_pdf':
+                page = start_info.get('start_from_page', '?')
+                word = start_info.get('start_from_word', 1)
+                print(f"🎯 Start: Page {page}, Word {word}")
+                
+            else:
+                # Original section-based system
+                section_label = "page" if file_type == '.pdf' else "section"
+                section = start_info.get('section', '?')
+                subsection = start_info.get('subsection', '?')
+                word = start_info.get('word', 1)
+                word_display = f", Word {word}" if word > 1 else ""
+                print(f"🎯 Start: {section_label.title()} {section}, Subsection {subsection}{word_display}")
+        
+        # Show section/chapter info if specified
+        if sections:
+            if section_type == "chapters":
+                print(f"📖 Processing chapters: {sections}")
+            elif section_type == "sections":
+                print(f"📝 Processing sections: {sections}")
+            elif section_type == "pages":
+                print(f"📄 Processing pages: {sections}")
         
         project_manager.display_config_summary(config)
         

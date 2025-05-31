@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Preprocessing - Universal text extraction and basic cleaning
-Outputs clean text files for engines to process individually
-"""
-
 import os
 import sys
 import argparse
@@ -91,13 +85,6 @@ def extract_from_epub(file_path, sections=None):
 
 def extract_text_sections_for_interactive(file_path, selected_sections=None):
     """Extract text from file, keeping sections separate for interactive selection"""
-    try:
-        import ebooklib
-        from ebooklib import epub
-        from bs4 import BeautifulSoup
-    except ImportError:
-        raise ImportError("Interactive start requires: pip install ebooklib beautifulsoup4")
-    
     file_path = Path(file_path)
     
     if file_path.suffix.lower() == '.txt':
@@ -121,6 +108,13 @@ def extract_text_sections_for_interactive(file_path, selected_sections=None):
         return sections
     
     elif file_path.suffix.lower() == '.epub':
+        try:
+            import ebooklib
+            from ebooklib import epub
+            from bs4 import BeautifulSoup
+        except ImportError:
+            raise ImportError("Interactive start requires: pip install ebooklib beautifulsoup4")
+        
         try:
             book = epub.read_epub(file_path)
         except Exception as e:
@@ -169,6 +163,14 @@ def extract_text_sections_for_interactive(file_path, selected_sections=None):
                 continue
         
         return sections
+    
+    elif file_path.suffix.lower() == '.pdf':
+        # Import PDF functionality from separate module
+        try:
+            from preprocessing_pdf import extract_pdf_sections_for_interactive
+            return extract_pdf_sections_for_interactive(file_path, selected_sections)
+        except ImportError:
+            raise ImportError("PDF support requires: pip install pymupdf")
     
     else:
         raise ValueError(f"Unsupported file type: {file_path.suffix}")
@@ -276,6 +278,17 @@ def interactive_start_selection(file_path, selected_sections=None):
     print("\n🎯 Interactive Start Point Selection")
     print("=" * 50)
     
+    file_type = Path(file_path).suffix.lower()
+    
+    # For PDFs, use hierarchical selection
+    if file_type == '.pdf':
+        try:
+            from preprocessing_pdf import interactive_hierarchical_start_selection
+            return interactive_hierarchical_start_selection(file_path)
+        except ImportError:
+            raise ImportError("PDF support requires: pip install pymupdf")
+    
+    # For other file types, use the original section-based system
     # Extract sections
     try:
         sections = extract_text_sections_for_interactive(file_path, selected_sections)
@@ -287,10 +300,12 @@ def interactive_start_selection(file_path, selected_sections=None):
         print("❌ No sections found")
         return None
     
-    print(f"📖 Found {len(sections)} section(s)")
+    section_label = "section"
+    
+    print(f"📖 Found {len(sections)} {section_label}(s)")
     
     # Let user choose which section to start from
-    print("\n📋 Available sections:")
+    print(f"\n📋 Available {section_label}s:")
     for i, section in enumerate(sections, 1):
         # Show first 100 characters as preview
         preview = section[:100].replace('\n', ' ').strip()
@@ -301,7 +316,7 @@ def interactive_start_selection(file_path, selected_sections=None):
     # Get section choice
     while True:
         try:
-            section_choice = input(f"\n🎯 Which section to start from? (1-{len(sections)}, or 'q' to quit): ").strip()
+            section_choice = input(f"\n🎯 Which {section_label} to start from? (1-{len(sections)}, or 'q' to quit): ").strip()
             if section_choice.lower() == 'q':
                 return None
             
@@ -320,10 +335,10 @@ def interactive_start_selection(file_path, selected_sections=None):
     subsections = split_section_into_subsections(selected_section)
     
     if len(subsections) == 1:
-        print(f"\n📝 Section {section_num} has only one subsection")
+        print(f"\n📝 {section_label.title()} {section_num} has only one subsection")
         
         # Go directly to word-level selection for the single subsection
-        print(f"🎯 Selecting start word within section {section_num}")
+        print(f"🎯 Selecting start word within {section_label} {section_num}")
         word_num = interactive_word_selection(subsections[0])
         
         if word_num is None:
@@ -338,7 +353,7 @@ def interactive_start_selection(file_path, selected_sections=None):
             'start_from_word': word_num
         }
     
-    print(f"\n📝 Section {section_num} has {len(subsections)} subsections:")
+    print(f"\n📝 {section_label.title()} {section_num} has {len(subsections)} subsections:")
     for i, subsection in enumerate(subsections, 1):
         # Show first 150 characters as preview
         preview = subsection[:150].replace('\n', ' ').strip()
@@ -364,7 +379,7 @@ def interactive_start_selection(file_path, selected_sections=None):
     # Selected subsection
     selected_subsection = subsections[subsection_num - 1]
     
-    print(f"\n✅ Selected: Section {section_num}, Subsection {subsection_num}")
+    print(f"\n✅ Selected: {section_label.title()} {section_num}, Subsection {subsection_num}")
     
     # Now get word-level selection
     print(f"🎯 Selecting start word within subsection {subsection_num}")
@@ -374,7 +389,7 @@ def interactive_start_selection(file_path, selected_sections=None):
         print("❌ Word selection cancelled")
         return None
     
-    print(f"\n✅ Final selection: Section {section_num}, Subsection {subsection_num}, Word {word_num}")
+    print(f"\n✅ Final selection: {section_label.title()} {section_num}, Subsection {subsection_num}, Word {word_num}")
     
     # Show final preview
     words = selected_subsection.split()
@@ -403,6 +418,12 @@ def interactive_start_selection(file_path, selected_sections=None):
 def apply_start_info(text_sections, start_info):
     """Apply start info to skip content before the selected start point"""
     if not start_info:
+        return ' '.join(text_sections)
+    
+    # Handle hierarchical PDF selections
+    if start_info.get('selection_type') in ['hierarchical_pdf', 'page_based_pdf']:
+        # For PDF files, the extraction is handled in the PDF module
+        # This function won't be called for PDF hierarchical selections
         return ' '.join(text_sections)
     
     section_num = start_info['start_from_section']
@@ -458,26 +479,38 @@ def apply_start_info(text_sections, start_info):
     return ' '.join(remaining_sections)
 
 def extract_section_candidates(source_file):
-    from pathlib import Path
-
+    """Extract section candidates from file"""
     sections = []
     path = Path(source_file)
+    
     if path.suffix.lower() == '.txt':
         with open(path, 'r', encoding='utf-8') as f:
             text = f.read()
         # Split on double newlines
         sections = [s.strip() for s in text.split('\n\n') if s.strip()]
+        
     elif path.suffix.lower() == '.epub':
-        from ebooklib import epub
-        from bs4 import BeautifulSoup
-
-        book = epub.read_epub(str(path))
-        items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
-        for item in items:
-            soup = BeautifulSoup(item.get_body_content(), 'html.parser')
-            section_text = soup.get_text(separator=' ').strip()
-            if section_text:
-                sections.append(section_text)
+        try:
+            import ebooklib
+            from ebooklib import epub
+            from bs4 import BeautifulSoup
+            
+            book = epub.read_epub(str(path))
+            items = list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+            for item in items:
+                soup = BeautifulSoup(item.get_body_content(), 'html.parser')
+                section_text = soup.get_text(separator=' ').strip()
+                if section_text:
+                    sections.append(section_text)
+        except ImportError:
+            raise ImportError("EPUB support requires: pip install ebooklib beautifulsoup4")
+            
+    elif path.suffix.lower() == '.pdf':
+        try:
+            from preprocessing_pdf import extract_pdf_sections_for_interactive
+            sections = extract_pdf_sections_for_interactive(path)
+        except ImportError:
+            raise ImportError("PDF support requires: pip install pymupdf")
     else:
         raise ValueError("Unsupported file type")
 
@@ -511,7 +544,6 @@ def list_epub_sections(file_path, output_json=False):
             content = doc.get_content().decode('utf-8')
             soup = BeautifulSoup(content, 'html.parser')
             
-            # Get title from first heading or filename
             title = "Untitled"
             for tag in ['h1', 'h2', 'h3', 'title']:
                 heading = soup.find(tag)
@@ -549,6 +581,14 @@ def list_epub_sections(file_path, output_json=False):
     
     return sections_info
 
+def list_pdf_sections(file_path, output_json=False):
+    """List available chapters/pages in PDF file - DELEGATED TO PDF MODULE"""
+    try:
+        from preprocessing_pdf import list_pdf_sections as pdf_list_sections
+        return pdf_list_sections(file_path, output_json)
+    except ImportError:
+        raise ImportError("PDF support requires: pip install pymupdf")
+
 def get_epub_section_count(file_path):
     """Get number of sections in EPUB file"""
     try:
@@ -563,6 +603,22 @@ def get_epub_section_count(file_path):
         return len(content_docs)
     except Exception as e:
         raise ValueError(f"Could not read EPUB file: {e}")
+
+def get_pdf_page_count(file_path):
+    """Get number of pages in PDF file - DELEGATED TO PDF MODULE"""
+    try:
+        from preprocessing_pdf import get_pdf_page_count as pdf_page_count
+        return pdf_page_count(file_path)
+    except ImportError:
+        raise ImportError("PDF support requires: pip install pymupdf")
+
+def get_pdf_chapter_count(file_path):
+    """Get number of chapters in PDF file - NEW FUNCTION"""
+    try:
+        from preprocessing_pdf import get_pdf_chapter_count as pdf_chapter_count
+        return pdf_chapter_count(file_path)
+    except ImportError:
+        raise ImportError("PDF support requires: pip install pymupdf")
 
 def parse_section_arguments(sections_args):
     """Parse section arguments like ['1', '3-5', '7'] into [1, 3, 4, 5, 7]"""
@@ -602,8 +658,75 @@ def extract_text(file_path, sections=None):
         if sections:
             raise ValueError("Section selection not supported for TXT files")
         return extract_from_txt(file_path)
+    elif suffix == '.pdf':
+        # Delegate to PDF module
+        try:
+            from preprocessing_pdf import extract_from_pdf
+            return extract_from_pdf(file_path, sections)
+        except ImportError:
+            raise ImportError("PDF support requires: pip install pymupdf")
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
+
+def apply_phonetic_pronunciation_fixes(text):
+    """Apply phonetic spelling fixes for non-SSML engines (Bark, F5, XTTS, EdgeTTS)"""
+    print("STATUS: Applying phonetic pronunciation fixes...", file=sys.stderr)
+    
+    pronunciation_fixes = {
+        # Religious/philosophical terms - NO HYPHENS to avoid pauses
+        "atheist": "aytheeist",
+        "atheists": "aytheeists", 
+        "atheism": "aytheeism",
+        "Jehovah's": "jehovas",
+        
+        # Common problem words - no hyphens/dashes
+        "colonel": "kernel",
+        "hierarchy": "hiyerarkey",
+        "epitome": "ihpitomee",
+        "hyperbole": "hyperbolee",
+        "cache": "cash",
+        "niche": "neesh",
+        "facade": "fasahd",
+        "gauge": "gayj",
+        "receipt": "reeseet",
+        "height": "hite",
+        "leisure": "leezhur",
+        
+        # Religious/historical terms - no hyphens
+        "bourgeois": "boorzhwah",
+        "rendezvous": "rondayvoo",
+        "regime": "rehzheem",
+        "fascism": "fashism",
+        "Nazi": "notsee",
+        "Nazis": "notsees",
+        "Aryan": "airy an",
+        "pundits": "pundits",
+        "ambiguous": "ambigyoous",
+        "Christianity": "christianity",
+        "religious": "rihliljus",
+        
+        # Geographic/names - no hyphens
+        "Worcester": "wuster",
+        "Leicester": "lester",
+        "Arkansas": "arkansaw"
+    }
+    
+    fixes_applied = 0
+    for word, replacement in pronunciation_fixes.items():
+        pattern = r'\b' + re.escape(word) + r'\b'
+        before_count = len(re.findall(pattern, text, flags=re.IGNORECASE))
+        if before_count > 0:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+            fixes_applied += before_count
+    
+    # Remove problematic names that cause repetition
+    text = re.sub(r'\s+Owen Morgan\.?\s*$', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s+[A-Z][a-z]+\s+[A-Z][a-z]+\.?\s*$', '', text)
+    
+    if fixes_applied > 0:
+        print(f"STATUS: Applied {fixes_applied} phonetic pronunciation fixes", file=sys.stderr)
+    
+    return text
 
 def clean_text_basic(text):
     """Apply universal text cleaning that works for all engines"""
@@ -664,11 +787,23 @@ def preprocess_file(input_file, output_file, config, sections=None):
     start_info = config.get('preprocessing', {}).get('start_info')
     
     if start_info:
-        print(f"STATUS: Using interactive start point: Section {start_info['section']}, Subsection {start_info['subsection']}", file=sys.stderr)
+        file_type = Path(input_file).suffix.lower()
         
-        # Extract text sections separately to apply start_info
-        text_sections = extract_text_sections_for_interactive(input_file, sections)
-        text = apply_start_info(text_sections, start_info)
+        # Handle PDF hierarchical selections
+        if file_type == '.pdf' and start_info.get('selection_type') in ['hierarchical_pdf', 'page_based_pdf']:
+            print(f"STATUS: Using PDF hierarchical selection", file=sys.stderr)
+            try:
+                from preprocessing_pdf import extract_pdf_from_hierarchical_selection
+                text = extract_pdf_from_hierarchical_selection(input_file, start_info)
+            except ImportError:
+                raise ImportError("PDF support requires: pip install pymupdf")
+        else:
+            # Original section-based approach
+            print(f"STATUS: Using interactive start point: Section {start_info['section']}, Subsection {start_info['subsection']}", file=sys.stderr)
+            
+            # Extract text sections separately to apply start_info
+            text_sections = extract_text_sections_for_interactive(input_file, sections)
+            text = apply_start_info(text_sections, start_info)
     else:
         # Normal extraction
         text = extract_text(input_file, sections)
@@ -679,6 +814,9 @@ def preprocess_file(input_file, output_file, config, sections=None):
     # Apply basic cleaning
     cleaned_text = clean_text_basic(text)
     
+    # Apply phonetic pronunciation fixes for all engines
+    cleaned_text = apply_phonetic_pronunciation_fixes(cleaned_text)
+    
     # Save cleaned text
     save_clean_text(cleaned_text, output_file)
     
@@ -688,26 +826,35 @@ def preprocess_file(input_file, output_file, config, sections=None):
 def main():
     """Command-line interface"""
     parser = argparse.ArgumentParser(description="Universal text preprocessing")
-    parser.add_argument("input_file", help="Input EPUB or TXT file")
+    parser.add_argument("input_file", help="Input EPUB, PDF, or TXT file")
     parser.add_argument("output_file", nargs='?', help="Output clean text file")
-    parser.add_argument("--sections", nargs="*", help="Section numbers (e.g., 1 2 3 or 1-5)")
-    parser.add_argument("--list", action="store_true", help="List available sections")
-    parser.add_argument("--list-json", action="store_true", help="List sections as JSON")
+    parser.add_argument("--sections", nargs="*", help="Section numbers for EPUB/PDF (e.g., 1 2 3 or 1-5)")
+    parser.add_argument("--chapters", nargs="*", help="Chapter numbers for PDF (e.g., 1 2 3 or 1-5)")
+    parser.add_argument("--list", action="store_true", help="List available sections/chapters/pages")
+    parser.add_argument("--list-json", action="store_true", help="List sections/chapters/pages as JSON")
     parser.add_argument("--interactive-start", action="store_true", help="Interactive start point selection")
     
     args = parser.parse_args()
     
     # Handle section listing
     if args.list or args.list_json:
-        if Path(args.input_file).suffix.lower() == '.epub':
+        file_path = Path(args.input_file)
+        if file_path.suffix.lower() == '.epub':
             try:
                 list_epub_sections(args.input_file, output_json=args.list_json)
                 return 0
             except Exception as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 return 1
+        elif file_path.suffix.lower() == '.pdf':
+            try:
+                list_pdf_sections(args.input_file, output_json=args.list_json)
+                return 0
+            except Exception as e:
+                print(f"ERROR: {e}", file=sys.stderr)
+                return 1
         else:
-            print("ERROR: Section listing only available for EPUB files", file=sys.stderr)
+            print("ERROR: Section listing only available for EPUB and PDF files", file=sys.stderr)
             return 1
     
     # Handle interactive start
@@ -716,6 +863,8 @@ def main():
             sections = None
             if args.sections:
                 sections = parse_section_arguments(args.sections)
+            elif args.chapters:
+                sections = parse_section_arguments(args.chapters)
             
             start_info = interactive_start_selection(args.input_file, sections)
             if start_info:
@@ -737,11 +886,17 @@ def main():
         print(f"ERROR: Input file not found: {args.input_file}", file=sys.stderr)
         return 1
     
-    # Parse sections
+    # Parse sections/chapters
     sections = None
     if args.sections:
         try:
             sections = parse_section_arguments(args.sections)
+        except Exception as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+    elif args.chapters:
+        try:
+            sections = parse_section_arguments(args.chapters)
         except Exception as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
