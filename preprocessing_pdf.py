@@ -12,7 +12,7 @@ from pathlib import Path
 def get_pdf_chapters(file_path):
     """Get chapters using the best available method"""
     try:
-        import fitz
+        import fitz # type: ignore
     except ImportError:
         raise ImportError("PDF support requires: pip install pymupdf")
     
@@ -78,7 +78,7 @@ def get_pdf_chapters(file_path):
 def detect_chapters_by_patterns(file_path):
     """Detect chapters using text patterns"""
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         # Common chapter patterns
@@ -149,7 +149,7 @@ def extract_from_pdf(file_path, sections=None):
 def extract_pdf_by_pages(file_path, page_numbers=None):
     """Extract text from PDF by page numbers (original functionality)"""
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         if doc.is_encrypted:
@@ -216,7 +216,7 @@ def extract_pdf_by_chapters(file_path, chapter_numbers=None):
     
     # Extract text from chapter ranges
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         extracted_text = []
@@ -266,7 +266,7 @@ def extract_pdf_sections_for_interactive(file_path, selected_sections=None):
     
     # Extract text from each chapter separately
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         sections = []
@@ -297,7 +297,7 @@ def extract_pdf_sections_for_interactive(file_path, selected_sections=None):
 def extract_pdf_pages_as_sections(file_path, selected_pages=None):
     """Fallback: Extract pages as sections when no chapters detected"""
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         if doc.is_encrypted:
@@ -378,7 +378,7 @@ def list_pdf_sections(file_path, output_json=False):
 def list_pdf_pages_fallback(file_path, output_json=False):
     """Fallback page listing when no chapters detected"""
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         if doc.is_encrypted:
@@ -439,7 +439,7 @@ def list_pdf_pages_fallback(file_path, output_json=False):
 def get_pdf_page_count(file_path):
     """Get number of pages in PDF file"""
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         if doc.is_encrypted:
@@ -523,7 +523,7 @@ def interactive_hierarchical_start_selection(file_path):
         
         # Show pages in chapter
         try:
-            import fitz
+            import fitz # type: ignore
             doc = fitz.open(str(file_path))
             
             print(f"📄 Pages in Chapter {chapter_num}:")
@@ -571,7 +571,7 @@ def interactive_hierarchical_start_selection(file_path):
     # Step 3: Show words and select start word
     print(f"\n📝 Step 3: Choose Starting Word")
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         
         page = doc[absolute_page - 1]  # Convert to 0-indexed
@@ -675,7 +675,7 @@ def interactive_page_word_selection(file_path):
     print("\n📄 Page-based selection (no chapters detected)")
     
     try:
-        import fitz
+        import fitz # type: ignore
         doc = fitz.open(str(file_path))
         total_pages = len(doc)
         
@@ -807,7 +807,7 @@ def extract_pdf_from_hierarchical_selection(file_path, selection_info):
         word_offset = selection_info.get('word', 1) - 1  # Convert to 0-indexed
         
         try:
-            import fitz
+            import fitz # type: ignore
             doc = fitz.open(str(file_path))
             
             extracted_text = []
@@ -854,7 +854,7 @@ def extract_pdf_from_hierarchical_selection(file_path, selection_info):
         word_offset = selection_info.get('start_from_word', 1) - 1
         
         try:
-            import fitz
+            import fitz # type: ignore
             doc = fitz.open(str(file_path))
             
             extracted_text = []
@@ -897,7 +897,7 @@ def extract_pdf_from_hierarchical_selection(file_path, selection_info):
 def test_pdf_file(file_path):
     """Test if PDF file can be opened and read"""
     try:
-        import fitz
+        import fitz # type: ignore
         print(f"DEBUG: Testing PDF file: {file_path}", file=sys.stderr)
         
         doc = fitz.open(str(file_path))
