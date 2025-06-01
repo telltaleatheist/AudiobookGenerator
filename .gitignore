@@ -38,3 +38,27 @@ __pycache__/preprocessing.cpython-310.pyc
 __pycache__/project_manager.cpython-310.pyc
 __pycache__/xtts_engine.cpython-310.pyc
 misc/sample-owen-morgan-1.wav
+audio/.DS_Store
+audio/speech/1_EdgeTTS_Audio_0de83e5232.json
+audio/speech/1_EdgeTTS_Audio_0de83e5232.wav
+audio/speech/1_EdgeTTS_Audio_6627b8306a.json
+audio/speech/1_EdgeTTS_Audio_6627b8306a.wav
+audio/speech/21_Speech_Converted_06d2d6fc27.json
+audio/speech/21_Speech_Converted_06d2d6fc27.wav
+audio/speech/21_Speech_Converted_85f0154915.json
+audio/speech/21_Speech_Converted_85f0154915.wav
+audio/speech/21_Speech_Converted_3197fcd0f3.json
+audio/speech/21_Speech_Converted_3197fcd0f3.wav
+audio/speech/51_Speech_Mixed_0da2cb7e72.json
+audio/speech/51_Speech_Mixed_0da2cb7e72.mp3
+audio/speech/51_Speech_Mixed_a7b280e542.json
+audio/speech/51_Speech_Mixed_a7b280e542.mp3
+audio/speech/51_Speech_Mixed_bf6c7f2a2e.json
+audio/speech/51_Speech_Mixed_bf6c7f2a2e.mp3
+audio/training/my_voice/Morgan, Owen. Was Hitler An Atheist. 2024.mp3
+audio/training/my_voice/sample-2hr-conversational.wav
+misc/rvc training samples/Morgan, Owen. Was Hitler An Atheist. 2024.mp3
+misc/rvc training samples/sample-2hr-conversational.wav
+run_rvc.py
+.DS_Store
+core-requirements.txt

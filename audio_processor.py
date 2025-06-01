@@ -130,26 +130,52 @@ def remove_long_silence(input_path, output_path, silence_threshold=-40, silence_
         print("ERROR: ffmpeg not found. Please install ffmpeg", file=sys.stderr)
         return False
 
-def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator"):
-    """Run RVC conversion with minimal processing to prevent audio loss"""
+def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator", rvc_config=None):
+    """Run RVC conversion with configurable quality settings"""
     
     # Ensure output directory exists
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # RVC settings optimized for quality
+    # Default RVC settings (your improved settings) - only used if no config provided
+    if not rvc_config:
+        rvc_config = {
+            'n_semitones': -2,          # Lower pitch 
+            'f0_method': 'crepe',       # Better pitch detection
+            'index_rate': 0.4,          # Slightly lower for fewer artifacts
+            'protect_rate': 0.4,        # Balanced protection
+            'rms_mix_rate': 0.5,        # Better volume balance
+            'hop_length': 64,           # More frequent pitch checks for smoothness
+            'split_voice': True,        # Split for better quality
+            'clean_voice': True,        # Enable voice cleaning
+            'clean_strength': 0.5,      # Moderate cleaning strength
+            'autotune_voice': True,     # Enable autotune for smoothness
+            'autotune_strength': 0.3    # Gentle autotune
+        }
+    
+    # Build command with configurable values
     cmd = [
         "urvc", "generate", "convert-voice",
         str(input_wav),
         str(output_dir),
         model_name,
-        "--n-octaves", "-1",  # Female to male conversion
-        "--f0-method", "crepe",
-        "--index-rate", "0.3",
-        "--protect-rate", "0.5",
-        "--rms-mix-rate", "0.8",
-        "--hop-length", "128"
+        "--n-semitones", str(rvc_config.get('n_semitones', -2)),
+        "--f0-method", rvc_config.get('f0_method', 'crepe'),
+        "--index-rate", str(rvc_config.get('index_rate', 0.4)),
+        "--protect-rate", str(rvc_config.get('protect_rate', 0.4)),
+        "--rms-mix-rate", str(rvc_config.get('rms_mix_rate', 0.5)),
+        "--hop-length", str(rvc_config.get('hop_length', 64))
     ]
+    
+    # Add boolean flags if enabled
+    if rvc_config.get('split_voice', True):
+        cmd.append("--split-voice")
+    
+    if rvc_config.get('clean_voice', True):
+        cmd.extend(["--clean-voice", "--clean-strength", str(rvc_config.get('clean_strength', 0.5))])
+    
+    if rvc_config.get('autotune_voice', True):
+        cmd.extend(["--autotune-voice", "--autotune-strength", str(rvc_config.get('autotune_strength', 0.3))])
     
     print(f"STATUS: Running RVC conversion with model '{model_name}'", file=sys.stderr)
     
@@ -194,7 +220,7 @@ def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator"):
         print("ERROR: RVC command 'urvc' not found. Make sure RVC is installed and in PATH", file=sys.stderr)
         print(f"DEBUG: Current PATH: {os.environ.get('PATH', 'Not found')}", file=sys.stderr)
         return False, None
-
+    
 def find_rvc_output_file(output_dir, base_name=None):
     """Find the RVC output file (RVC typically adds suffixes to filenames)"""
     output_dir = Path(output_dir)

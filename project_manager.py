@@ -351,7 +351,18 @@ class ProjectManager:
                 'speed_factor': 1.0,
                 'clean_silence': True,
                 'silence_threshold': -40.0,
-                'silence_duration': 0.6
+                'silence_duration': 0.6,
+                'n_semitones': -2,
+                'f0_method': 'crepe',
+                'index_rate': 0.4,
+                'protect_rate': 0.4,
+                'rms_mix_rate': 0.5,
+                'hop_length': 64,
+                'split_voice': True,
+                'clean_voice': True,
+                'clean_strength': 0.5,
+                'autotune_voice': True,
+                'autotune_strength': 0.3
             },
             'audio': {
                 'silence_gap': 0.3

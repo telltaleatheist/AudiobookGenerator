@@ -130,3 +130,87 @@ urvc generate speech run-pipeline "Hello world" "My_RVC_Model"
 
 # Run pipeline with custom Edge TTS voice and RVC settings
 urvc generate speech run-pipeline "Hello world" "My_RVC_Model" --tts-voice en-US-JennyNeural --f0-method crepe --clean-speech --output-format wav --output-name "my_speech"
+
+
+Command
+bashurvc train preprocess-dataset MODEL_NAME DATASET [OPTIONS]
+Required Arguments
+ArgumentTypeDescriptionMODEL_NAMETextName of the voice model to train. Creates new model if it doesn't exist, or replaces dataset for existing modelDATASETDirectoryPath to the folder containing audio files to preprocess
+Options
+Sample Rate
+bash--sample-rate [32000|40000|48000]
+
+Default: 40000
+Purpose: Target sample rate for all audio files
+Recommendation: Use 40000 for best RVC compatibility
+
+Split Method
+bash--split-method [Skip|Simple|Automatic]
+
+Default: Automatic
+Options:
+
+Skip: Use if audio files are already properly split
+Simple: Use if silence has been manually removed
+Automatic: Let RVC detect and split around silence (recommended)
+
+
+
+Chunk Settings (Simple method only)
+bash--chunk-len 3.0          # Length of each audio chunk (0.5-5.0 seconds)
+--overlap-len 0.3        # Overlap between chunks (0.0-0.4 seconds)
+Audio Filtering
+bash--filter-audio           # Apply high-pass filter (default: enabled)
+--no-filter-audio        # Skip filtering
+
+Purpose: Removes low-frequency noise and rumble
+Recommendation: Keep enabled unless source audio is already clean
+
+Audio Cleaning
+bash--clean-audio            # Apply noise reduction
+--no-clean-audio         # Skip cleaning (default)
+--clean-strength 0.7     # Cleaning intensity (0.0-1.0)
+
+Purpose: Reduces background noise and artifacts
+Recommendation: Enable for lower quality source audio
+
+Performance
+bash--cpu-cores 20           # Number of CPU cores to use (1-20)
+
+Default: 20
+Recommendation: Use your CPU's thread count or slightly less
+
+Examples
+Basic Preprocessing
+bashurvc train preprocess-dataset my_voice /path/to/audio/files
+High-Quality Dataset (clean studio recordings)
+bashurvc train preprocess-dataset my_voice /path/to/audio/files \
+  --sample-rate 48000 \
+  --split-method Skip \
+  --no-filter-audio \
+  --no-clean-audio
+Low-Quality Dataset (phone recordings, background noise)
+bashurvc train preprocess-dataset my_voice /path/to/audio/files \
+  --sample-rate 40000 \
+  --split-method Automatic \
+  --filter-audio \
+  --clean-audio \
+  --clean-strength 0.8
+Fast Processing (fewer CPU cores)
+bashurvc train preprocess-dataset my_voice /path/to/audio/files \
+  --cpu-cores 8
+Tips
+
+Dataset Quality: Higher quality input = better voice model
+File Format: WAV files work best, avoid compressed formats
+Duration: Aim for 10+ minutes of clean speech per model
+Consistency: Use consistent recording conditions across all files
+Content: Varied speech content (different words, emotions) improves model
+Background: Remove background music and noise before preprocessing
+
+Next Steps
+After preprocessing, continue with:
+
+urvc train extract-features - Extract voice characteristics
+urvc train run-training - Train the actual voice model
+Test with urvc generate convert-voice - Convert audio with your model
