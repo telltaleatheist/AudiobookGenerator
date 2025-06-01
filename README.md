@@ -317,6 +317,9 @@ urvc generate convert-voice "input.wav" "output_dir" "model_name" \
   --clean-strength 0.7 \
   --autotune-voice \
   --autotune-strength 0.4
+
+  best settings: urvc generate convert-voice "C:\Users\tellt\OneDrive\Documents\tts\Audiobook Generator\output\eisenhauer\jobs\complete\Eisenhauer, Jay. ARC Genesis. 2025.wav" "C:\Users\tellt\OneDrive\Documents\tts\Audiobook Generator\output\eisenhauer\jobs\complete" my_voice --n-semitones -2 --index-rate 1.0 --protect-rate 0.4 --rms-mix-rate 0.1 --f0-method crepe --clean-voice --clean-strength 0.7 --hop-length 64 --split-voice --autotune-voice --autotune-strength 0.4
+
 ## Configuration
 The system uses JSON configuration files with engine-specific settings:
 
