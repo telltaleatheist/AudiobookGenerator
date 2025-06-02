@@ -37,12 +37,12 @@ def get_bark_default_config():
             'voice': 'v2/en_speaker_0',
             'text_temp': 0.1,
             'waveform_temp': 0.15,
-            'chunk_max_chars': 200,
-            'target_chars': 150,
-            'reload_model_every_chunks': 20,
-            'reload_model_every_chars': 3000,
-            'add_padding': True,
-            'padding_format': '. {text}.'
+            'chunk_max_chars': 150,
+            'target_chars': 120,
+            'reload_model_every_chunks': 15,
+            'reload_model_every_chars': 2000,
+            'add_padding': False,
+            'padding_format': '{text}'
         }
     }
 
@@ -59,7 +59,6 @@ def chunk_text_for_bark(text, max_chars=200):
         if not sentence:
             continue
         
-        # If adding this sentence would exceed max, start new chunk
         if current_chunk and len(current_chunk) + len(sentence) + 1 > max_chars:
             if current_chunk:
                 chunks.append(current_chunk.strip())
@@ -70,22 +69,14 @@ def chunk_text_for_bark(text, max_chars=200):
             else:
                 current_chunk = sentence
         
-        # If we're at a good size and at sentence boundary, create chunk
-        if len(current_chunk) >= max_chars * 0.75:  # 75% of max
+        if len(current_chunk) >= max_chars * 0.8:  # 80% of max
             chunks.append(current_chunk.strip())
             current_chunk = ""
     
-    # Add remaining text
     if current_chunk:
         chunks.append(current_chunk.strip())
     
-    # Add padding for Bark (helps with quality)
-    padded_chunks = []
-    for chunk in chunks:
-        if chunk:
-            padded_chunks.append(f". {chunk}.")
-    
-    return padded_chunks
+    return chunks
 
 def reload_bark_model():
     """Reload Bark model to clear context"""

@@ -296,11 +296,11 @@ class ProjectManager:
             'batch_dir': batch_dir,
             'temp_dir': batch_dir / "temp_files",
             'chunks': batch_dir / f"{project_name}_{batch_name}_chunks{engine_suffix}.txt",
-            'combined': batch_dir / f"{project_name}_{batch_name}{engine_suffix}_combined.wav",
-            'final': batch_dir / f"{project_name}_{batch_name}.wav",
+            'combined': batch_dir / f"{batch_name}_tts.wav",
+            'final': batch_dir / f"{batch_name}_rvc.wav",
             'log': batch_dir / "progress.log",
-            'config': project_dir / "config" / "config.json",  # Single config file
-            'job_config': batch_dir / "config.json"  # Copy in job directory
+            'config': project_dir / "config" / "config.json",
+            'job_config': batch_dir / "config.json"
         }
         
         paths['temp_dir'].mkdir(exist_ok=True)

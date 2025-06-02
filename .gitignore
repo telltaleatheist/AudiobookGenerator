@@ -62,3 +62,45 @@ misc/rvc training samples/sample-2hr-conversational.wav
 run_rvc.py
 .DS_Store
 core-requirements.txt
+__pycache__/audio_processor.cpython-312.pyc
+__pycache__/bark_engine.cpython-312.pyc
+__pycache__/edge_engine.cpython-312.pyc
+__pycache__/engine_registry.cpython-312.pyc
+__pycache__/f5_engine.cpython-312.pyc
+__pycache__/pipeline_manager.cpython-312.pyc
+__pycache__/preprocessing.cpython-312.pyc
+__pycache__/project_manager.cpython-312.pyc
+__pycache__/xtts_engine.cpython-312.pyc
+misc/ujw-short-text.txt
+raw/2025-03-19 Adam Swart - Violence and property destruction are not acceptable forms of protest..._reencoded.mov
+raw/2025-05-14 Right Wing Watch - Prosperity Gospel preacher Jesse Duplantis explains why the honorary ..._reencoded.mov
+raw/2025-05-17 Why does this stuff keep happening 👿_reencoded.mov
+raw/2025-05-24 Kirk debates a student from the MOST prestigious theology school. Who..._reencoded.mov
+raw/2025-05-30 Dave Mustaine describes growing up in a Witness family._reencoded.mov
+raw/2025-05-30 Dave Mustaine talks about his relationship with his two older Witness..._reencoded.mov
+raw/2025-05-30 ICE Agents Threatened to Arrest a Woman in North Plymouth, MA for Leg..._reencoded.mov
+raw/2025-05-30 Masked ICE⧸DHS agents jump out on and violently detain workers outsid..._reencoded.mov
+raw/2025-05-30 Steven Roy Martin - Joni Earnst on Medicaid： We Are All Going To Die._reencoded.mov
+raw/2025-05-31 Absolutely bonkers — Joni Ernst doubles down on her “we are all gonna..._reencoded.mov
+raw/2025-06-01 Frank Zappa trying to warn us in 1986..._reencoded.mov
+raw/2025-06-02 Acting ICE Director Todd Lyons Denounces ‘Nazi⧸Gestapo’ Labels, Unlea..._reencoded.mov
+raw/talarico-1.mov
+raw/talarico-2.mov
+raw/talarico-3.mov
+raw/talarico-4.mov
+raw/cleaned/2025-03-19 Adam Swart - Violence and property destruction are not acceptable forms of protest..._reencoded_simple.mov
+raw/cleaned/2025-05-14 Right Wing Watch - Prosperity Gospel preacher Jesse Duplantis explains why the honorary ..._reencoded_simple.mov
+raw/cleaned/2025-05-17 Why does this stuff keep happening 👿_reencoded_simple.mov
+raw/cleaned/2025-05-24 Kirk debates a student from the MOST prestigious theology school. Who..._reencoded_simple.mov
+raw/cleaned/2025-05-30 Dave Mustaine describes growing up in a Witness family._reencoded_simple.mov
+raw/cleaned/2025-05-30 Dave Mustaine talks about his relationship with his two older Witness..._reencoded_simple.mov
+raw/cleaned/2025-05-30 ICE Agents Threatened to Arrest a Woman in North Plymouth, MA for Leg..._reencoded_simple.mov
+raw/cleaned/2025-05-30 Masked ICE⧸DHS agents jump out on and violently detain workers outsid..._reencoded_simple.mov
+raw/cleaned/2025-05-30 Steven Roy Martin - Joni Earnst on Medicaid： We Are All Going To Die._reencoded_simple.mov
+raw/cleaned/2025-05-31 Absolutely bonkers — Joni Ernst doubles down on her “we are all gonna..._reencoded_simple.mov
+raw/cleaned/2025-06-01 Frank Zappa trying to warn us in 1986..._reencoded_simple.mov
+raw/cleaned/2025-06-02 Acting ICE Director Todd Lyons Denounces ‘Nazi⧸Gestapo’ Labels, Unlea..._reencoded_simple.mov
+raw/cleaned/talarico-1_simple.mov
+raw/cleaned/talarico-2_simple.mov
+raw/cleaned/talarico-3_simple.mov
+raw/cleaned/talarico-4_simple.mov

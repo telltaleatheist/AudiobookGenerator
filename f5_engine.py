@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 F5 Engine - F5-TTS processor with natural speech synthesis
-FIXED: Simplified to match working f5_test.py approach
+FIXED: Auto-detect companion text files and pass all config settings
 """
 
 import sys
@@ -25,11 +25,84 @@ def get_f5_default_config():
             'model_type': 'F5-TTS',
             'model_name': 'F5TTS_Base',
             'ref_audio': None,
-            'ref_text': None,
+            # NOTE: ref_text is NOT included in defaults - it's auto-detected from companion files
             'speed': 1.0,
-            'sample_rate': 24000
+            'sample_rate': 24000,
+            # Additional F5-TTS parameters that may be in config
+            'cross_fade_duration': 0.15,
+            'sway_sampling_coef': -1.0,
+            'cfg_strength': 2.0,
+            'nfe_step': 32,
+            'seed': -1,
+            'fix_duration': None,
+            'remove_silence': False
         }
     }
+
+def find_companion_text_file(audio_file_path):
+    """Find companion text file for the given audio file"""
+    audio_path = Path(audio_file_path)
+    
+    # Look for text file with same name
+    companion_text_path = audio_path.with_suffix('.txt')
+    
+    if companion_text_path.exists():
+        try:
+            with open(companion_text_path, 'r', encoding='utf-8') as f:
+                companion_text = f.read().strip()
+            
+            if companion_text:
+                print(f"STATUS: Found companion text file: {companion_text_path.name}", file=sys.stderr)
+                print(f"STATUS: Companion text ({len(companion_text)} chars): {companion_text[:100]}{'...' if len(companion_text) > 100 else ''}", file=sys.stderr)
+                return companion_text
+            else:
+                print(f"WARNING: Companion text file is empty: {companion_text_path.name}", file=sys.stderr)
+                return ""
+        except Exception as e:
+            print(f"WARNING: Could not read companion text file {companion_text_path.name}: {e}", file=sys.stderr)
+            return ""
+    
+    print(f"STATUS: No companion text file found for {audio_path.name}", file=sys.stderr)
+    return ""
+
+def auto_detect_reference_audio_and_text(project_paths):
+    """Auto-detect reference audio and companion text from samples directory"""
+    ref_audio = None
+    ref_text = ""
+    
+    # Look for samples directory in project
+    if 'project_dir' in project_paths:
+        samples_dir = Path(project_paths['project_dir']) / 'samples'
+    else:
+        # Fallback: look for samples relative to other paths
+        for path_key, path_value in project_paths.items():
+            if isinstance(path_value, (str, Path)):
+                potential_samples = Path(path_value).parent.parent / 'samples'
+                if potential_samples.exists():
+                    samples_dir = potential_samples
+                    break
+        else:
+            print(f"WARNING: Could not locate samples directory", file=sys.stderr)
+            return None, ""
+    
+    if not samples_dir.exists():
+        print(f"STATUS: No samples directory found at {samples_dir}", file=sys.stderr)
+        return None, ""
+    
+    # Find first .wav file in samples directory
+    wav_files = list(samples_dir.glob("*.wav"))
+    if not wav_files:
+        print(f"STATUS: No .wav files found in {samples_dir}", file=sys.stderr)
+        return None, ""
+    
+    # Use first wav file found
+    ref_audio = str(wav_files[0])
+    print(f"STATUS: Auto-detected reference audio: {wav_files[0].name}", file=sys.stderr)
+    
+    # Look for companion text file
+    ref_text = find_companion_text_file(ref_audio)
+    
+    return ref_audio, ref_text
 
 def load_f5_model():
     """Load F5-TTS model"""
@@ -46,8 +119,8 @@ def load_f5_model():
         print(f"ERROR: Failed to load F5 model: {e}", file=sys.stderr)
         return None
 
-def generate_f5_audio_simple(f5tts, text, ref_audio=None, ref_text=None, speed=1.0):
-    """Generate audio using F5-TTS - simplified approach matching f5_test.py"""
+def generate_f5_audio_simple(f5tts, text, ref_audio=None, ref_text=None, f5_config=None):
+    """Generate audio using F5-TTS with all available config parameters"""
     try:
         print(f"STATUS: Processing entire text in single F5-TTS call", file=sys.stderr)
         print(f"STATUS: Text length: {len(text)} characters", file=sys.stderr)
@@ -55,19 +128,32 @@ def generate_f5_audio_simple(f5tts, text, ref_audio=None, ref_text=None, speed=1
         if ref_audio:
             print(f"STATUS: Using reference audio: {Path(ref_audio).name}", file=sys.stderr)
             if ref_text:
-                print(f"STATUS: Using provided reference text", file=sys.stderr)
+                print(f"STATUS: Using companion reference text ({len(ref_text)} chars)", file=sys.stderr)
             else:
                 print(f"STATUS: Using empty ref_text (auto-transcribe)", file=sys.stderr)
         
-        # IMPORTANT: Force empty ref_text to avoid reference bleeding bug
-        # F5-TTS has a known issue where ref_text content bleeds into generated audio
-        # Using empty string forces auto-transcription which doesn't have this issue
-        result = f5tts.infer(
-            ref_file=ref_audio,
-            ref_text="",  # Always use empty string to avoid bleeding
-            gen_text=text,
-            speed=speed
-        )
+        # Build inference parameters
+        infer_params = {
+            'ref_file': ref_audio,
+            'ref_text': ref_text,  # Use actual ref_text (empty string for auto-transcribe)
+            'gen_text': text,
+            'speed': f5_config.get('speed', 1.0)
+        }
+        
+        # Add advanced F5-TTS parameters if present in config
+        if f5_config:
+            advanced_params = [
+                'cross_fade_duration', 'sway_sampling_coef', 'cfg_strength', 
+                'nfe_step', 'seed', 'fix_duration', 'remove_silence'
+            ]
+            
+            for param in advanced_params:
+                if param in f5_config and f5_config[param] is not None:
+                    infer_params[param] = f5_config[param]
+                    print(f"STATUS: Using F5 {param}: {f5_config[param]}", file=sys.stderr)
+        
+        # Generate audio
+        result = f5tts.infer(**infer_params)
         
         # Handle different return formats from F5-TTS (same as f5_test.py)
         if isinstance(result, (tuple, list)) and len(result) >= 2:
@@ -110,7 +196,7 @@ def save_f5_audio_simple(audio_data, sample_rate, output_path):
         return False
 
 def process_f5_text_file(text_file, output_dir, config, paths):
-    """Main F5 engine processor - simplified to match f5_test.py"""
+    """Main F5 engine processor with auto-detection of companion text files"""
     if not F5_AVAILABLE:
         raise ImportError("F5-TTS not available. Install with: pip install f5-tts")
     
@@ -120,9 +206,19 @@ def process_f5_text_file(text_file, output_dir, config, paths):
     print(f"STATUS: Starting F5-TTS processing (simplified mode)", file=sys.stderr)
     print(f"STATUS: Speed: {f5_config['speed']}x", file=sys.stderr)
     
-    # Get reference settings
+    # Auto-detect reference audio and companion text if not explicitly set
     ref_audio = f5_config.get('ref_audio')
-    ref_text = f5_config.get('ref_text', "")  # Default to empty for auto-transcription
+    ref_text = f5_config.get('ref_text')
+    
+    if not ref_audio:
+        # Auto-detect from samples directory
+        detected_audio, detected_text = auto_detect_reference_audio_and_text(paths)
+        ref_audio = detected_audio
+        ref_text = detected_text
+    else:
+        # If ref_audio is explicitly set, check for companion text
+        if not ref_text:  # Only auto-detect if ref_text is not explicitly set
+            ref_text = find_companion_text_file(ref_audio)
     
     if ref_audio:
         print(f"STATUS: Using voice cloning with {Path(ref_audio).name}", file=sys.stderr)
@@ -159,8 +255,8 @@ def process_f5_text_file(text_file, output_dir, config, paths):
             f5tts,
             text,
             ref_audio=ref_audio,
-            ref_text=ref_text,
-            speed=f5_config['speed']
+            ref_text=ref_text,  # Pass the detected or provided ref_text
+            f5_config=f5_config  # Pass full config for advanced parameters
         )
         
         generation_time = time.time() - start_time

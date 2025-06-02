@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Audio Processor - Handles RVC conversion and final audio cleanup
-Combines audio files and applies voice conversion
+FIXED: Pass through all RVC configuration settings
 """
 
 import sys
@@ -12,14 +12,30 @@ import os
 from pathlib import Path
 
 def get_audio_default_config():
-    """Get default audio processing configuration"""
+    """Get default audio processing configuration matching your preferred settings"""
     return {
         'rvc': {
-            'model': 'Sigma Male Narrator',
-            'speed_factor': 1.0,
+            'model': 'my_voice',  # Match your config
+            'speed_factor': 0.8,  # Match your config
             'clean_silence': True,
             'silence_threshold': -40.0,
-            'silence_duration': 0.6
+            'silence_duration': 0.5,  # Match your config
+            # Complete RVC configuration options - matching your preferred values
+            'n_semitones': -2,
+            'f0_method': 'crepe',
+            'index_rate': 0.4,
+            'protect_rate': 0.5,  # Match your config
+            'rms_mix_rate': 0.3,  # Match your config
+            'hop_length': 64,
+            'split_voice': True,
+            'clean_voice': True,
+            'clean_strength': 0.3,  # Match your config
+            'autotune_voice': True,
+            'autotune_strength': 0.2,  # Match your config
+            'filter_radius': 3,
+            'resample_sr': 0,
+            'envelope_mix': 1,
+            'protect_voiceless': 0.5
         },
         'audio': {
             'silence_gap': 0.3
@@ -131,29 +147,19 @@ def remove_long_silence(input_path, output_path, silence_threshold=-40, silence_
         return False
 
 def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator", rvc_config=None):
-    """Run RVC conversion with configurable quality settings"""
+    """Run RVC conversion with ALL available configuration settings"""
     
     # Ensure output directory exists
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Default RVC settings (your improved settings) - only used if no config provided
+    # Use provided config or fall back to defaults
     if not rvc_config:
-        rvc_config = {
-            'n_semitones': -2,          # Lower pitch 
-            'f0_method': 'crepe',       # Better pitch detection
-            'index_rate': 0.4,          # Slightly lower for fewer artifacts
-            'protect_rate': 0.4,        # Balanced protection
-            'rms_mix_rate': 0.5,        # Better volume balance
-            'hop_length': 64,           # More frequent pitch checks for smoothness
-            'split_voice': True,        # Split for better quality
-            'clean_voice': True,        # Enable voice cleaning
-            'clean_strength': 0.5,      # Moderate cleaning strength
-            'autotune_voice': True,     # Enable autotune for smoothness
-            'autotune_strength': 0.3    # Gentle autotune
-        }
+        rvc_config = get_audio_default_config()['rvc']
     
-    # Build command with configurable values
+    print(f"STATUS: Running RVC conversion with model '{model_name}'", file=sys.stderr)
+    
+    # Build command with ALL configurable values
     cmd = [
         "urvc", "generate", "convert-voice",
         str(input_wav),
@@ -167,17 +173,41 @@ def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator", 
         "--hop-length", str(rvc_config.get('hop_length', 64))
     ]
     
+    # Add all optional parameters
+    optional_params = {
+        'filter_radius': '--filter-radius',
+        'resample_sr': '--resample-sr',
+        'envelope_mix': '--envelope-mix',
+        'protect_voiceless': '--protect-voiceless'
+    }
+    
+    for config_key, cmd_flag in optional_params.items():
+        if config_key in rvc_config and rvc_config[config_key] is not None:
+            cmd.extend([cmd_flag, str(rvc_config[config_key])])
+            print(f"STATUS: Using RVC {config_key}: {rvc_config[config_key]}", file=sys.stderr)
+    
     # Add boolean flags if enabled
-    if rvc_config.get('split_voice', True):
-        cmd.append("--split-voice")
+    boolean_flags = {
+        'split_voice': '--split-voice',
+        'clean_voice': '--clean-voice',
+        'autotune_voice': '--autotune-voice'
+    }
     
-    if rvc_config.get('clean_voice', True):
-        cmd.extend(["--clean-voice", "--clean-strength", str(rvc_config.get('clean_strength', 0.5))])
+    for config_key, cmd_flag in boolean_flags.items():
+        if rvc_config.get(config_key, False):
+            cmd.append(cmd_flag)
+            print(f"STATUS: RVC {config_key} enabled", file=sys.stderr)
     
-    if rvc_config.get('autotune_voice', True):
-        cmd.extend(["--autotune-voice", "--autotune-strength", str(rvc_config.get('autotune_strength', 0.3))])
+    # Add strength parameters for enabled features
+    if rvc_config.get('clean_voice', False) and 'clean_strength' in rvc_config:
+        cmd.extend(["--clean-strength", str(rvc_config['clean_strength'])])
+        print(f"STATUS: Using RVC clean_strength: {rvc_config['clean_strength']}", file=sys.stderr)
     
-    print(f"STATUS: Running RVC conversion with model '{model_name}'", file=sys.stderr)
+    if rvc_config.get('autotune_voice', False) and 'autotune_strength' in rvc_config:
+        cmd.extend(["--autotune-strength", str(rvc_config['autotune_strength'])])
+        print(f"STATUS: Using RVC autotune_strength: {rvc_config['autotune_strength']}", file=sys.stderr)
+    
+    print(f"DEBUG: Full RVC command: {' '.join(cmd)}", file=sys.stderr)
     
     try:
         # Fix environment variables for RVC
@@ -248,7 +278,7 @@ def find_rvc_output_file(output_dir, base_name=None):
     return None
 
 def process_audio_through_rvc(input_file, output_file, config):
-    """Process an audio file through RVC conversion with optional cleaning and speed adjustment"""
+    """Process an audio file through RVC conversion with ALL configuration settings"""
     
     input_path = Path(input_file)
     output_path = Path(output_file)
@@ -258,13 +288,20 @@ def process_audio_through_rvc(input_file, output_file, config):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     print(f"STATUS: Processing {input_path.name} through RVC", file=sys.stderr)
+    print(f"STATUS: RVC model: {rvc_config['model']}", file=sys.stderr)
+    
+    # Log all RVC settings being used
+    print(f"STATUS: RVC settings:", file=sys.stderr)
+    for key, value in rvc_config.items():
+        if key != 'model':  # Already logged above
+            print(f"  {key}: {value}", file=sys.stderr)
     
     # Create temporary directory for RVC processing
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         
-        # Run RVC conversion
-        success, stdout = run_rvc_conversion(input_path, temp_path, rvc_config['model'])
+        # Run RVC conversion with full config
+        success, stdout = run_rvc_conversion(input_path, temp_path, rvc_config['model'], rvc_config)
         
         if not success:
             return False
@@ -322,11 +359,11 @@ def process_combined_audio(combined_file, final_file, config, skip_rvc=False):
         print(f"STATUS: Final audio: {final_file}", file=sys.stderr)
         return True
     
-    # Process through RVC
+    # Process through RVC with full configuration
     return process_audio_through_rvc(combined_file, final_file, config)
 
 def ensure_audio_config(config):
-    """Ensure audio config exists in the main config"""
+    """Ensure audio config exists in the main config with ALL available settings"""
     defaults = get_audio_default_config()
     config_updated = False
     
@@ -334,10 +371,12 @@ def ensure_audio_config(config):
         if section not in config:
             config[section] = section_config.copy()
             config_updated = True
+            print(f"STATUS: Added default {section} config", file=sys.stderr)
         else:
             for key, value in section_config.items():
                 if key not in config[section]:
                     config[section][key] = value
                     config_updated = True
+                    print(f"STATUS: Added default {section}.{key}: {value}", file=sys.stderr)
     
     return config_updated
