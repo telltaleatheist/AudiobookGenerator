@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Audio Processor - Handles RVC conversion and final audio cleanup
-FIXED: Pass through all RVC configuration settings
+FIXED: Only use RVC parameters that are actually supported by the installed version
 """
 
 import sys
@@ -20,7 +20,7 @@ def get_audio_default_config():
             'clean_silence': True,
             'silence_threshold': -40.0,
             'silence_duration': 0.5,  # Match your config
-            # Complete RVC configuration options - matching your preferred values
+            # Core RVC configuration options - only the ones that are widely supported
             'n_semitones': -2,
             'f0_method': 'crepe',
             'index_rate': 0.4,
@@ -32,10 +32,8 @@ def get_audio_default_config():
             'clean_strength': 0.3,  # Match your config
             'autotune_voice': True,
             'autotune_strength': 0.2,  # Match your config
-            'filter_radius': 3,
-            'resample_sr': 0,
-            'envelope_mix': 1,
-            'protect_voiceless': 0.5
+            # Removed optional parameters that may not be supported in all RVC versions:
+            # 'filter_radius', 'resample_sr', 'envelope_mix', 'protect_voiceless'
         },
         'audio': {
             'silence_gap': 0.3
@@ -147,7 +145,7 @@ def remove_long_silence(input_path, output_path, silence_threshold=-40, silence_
         return False
 
 def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator", rvc_config=None):
-    """Run RVC conversion with ALL available configuration settings"""
+    """Run RVC conversion with only the core supported configuration settings"""
     
     # Ensure output directory exists
     output_dir = Path(output_dir)
@@ -159,7 +157,7 @@ def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator", 
     
     print(f"STATUS: Running RVC conversion with model '{model_name}'", file=sys.stderr)
     
-    # Build command with ALL configurable values
+    # Build command with ONLY the core configurable values that are widely supported
     cmd = [
         "urvc", "generate", "convert-voice",
         str(input_wav),
@@ -173,20 +171,7 @@ def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator", 
         "--hop-length", str(rvc_config.get('hop_length', 64))
     ]
     
-    # Add all optional parameters
-    optional_params = {
-        'filter_radius': '--filter-radius',
-        'resample_sr': '--resample-sr',
-        'envelope_mix': '--envelope-mix',
-        'protect_voiceless': '--protect-voiceless'
-    }
-    
-    for config_key, cmd_flag in optional_params.items():
-        if config_key in rvc_config and rvc_config[config_key] is not None:
-            cmd.extend([cmd_flag, str(rvc_config[config_key])])
-            print(f"STATUS: Using RVC {config_key}: {rvc_config[config_key]}", file=sys.stderr)
-    
-    # Add boolean flags if enabled
+    # Add boolean flags if enabled (these are widely supported)
     boolean_flags = {
         'split_voice': '--split-voice',
         'clean_voice': '--clean-voice',
@@ -198,7 +183,7 @@ def run_rvc_conversion(input_wav, output_dir, model_name="Sigma Male Narrator", 
             cmd.append(cmd_flag)
             print(f"STATUS: RVC {config_key} enabled", file=sys.stderr)
     
-    # Add strength parameters for enabled features
+    # Add strength parameters for enabled features (widely supported)
     if rvc_config.get('clean_voice', False) and 'clean_strength' in rvc_config:
         cmd.extend(["--clean-strength", str(rvc_config['clean_strength'])])
         print(f"STATUS: Using RVC clean_strength: {rvc_config['clean_strength']}", file=sys.stderr)
@@ -278,7 +263,7 @@ def find_rvc_output_file(output_dir, base_name=None):
     return None
 
 def process_audio_through_rvc(input_file, output_file, config):
-    """Process an audio file through RVC conversion with ALL configuration settings"""
+    """Process an audio file through RVC conversion with core configuration settings"""
     
     input_path = Path(input_file)
     output_path = Path(output_file)
@@ -290,17 +275,24 @@ def process_audio_through_rvc(input_file, output_file, config):
     print(f"STATUS: Processing {input_path.name} through RVC", file=sys.stderr)
     print(f"STATUS: RVC model: {rvc_config['model']}", file=sys.stderr)
     
-    # Log all RVC settings being used
+    # Log core RVC settings being used (only the ones we're actually passing)
     print(f"STATUS: RVC settings:", file=sys.stderr)
-    for key, value in rvc_config.items():
-        if key != 'model':  # Already logged above
-            print(f"  {key}: {value}", file=sys.stderr)
+    core_settings = [
+        'speed_factor', 'clean_silence', 'silence_threshold', 'silence_duration',
+        'n_semitones', 'f0_method', 'index_rate', 'protect_rate', 'rms_mix_rate', 
+        'hop_length', 'split_voice', 'clean_voice', 'clean_strength', 
+        'autotune_voice', 'autotune_strength'
+    ]
+    
+    for key in core_settings:
+        if key in rvc_config:
+            print(f"  {key}: {rvc_config[key]}", file=sys.stderr)
     
     # Create temporary directory for RVC processing
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         
-        # Run RVC conversion with full config
+        # Run RVC conversion with core config only
         success, stdout = run_rvc_conversion(input_path, temp_path, rvc_config['model'], rvc_config)
         
         if not success:
@@ -359,11 +351,11 @@ def process_combined_audio(combined_file, final_file, config, skip_rvc=False):
         print(f"STATUS: Final audio: {final_file}", file=sys.stderr)
         return True
     
-    # Process through RVC with full configuration
+    # Process through RVC with core configuration only
     return process_audio_through_rvc(combined_file, final_file, config)
 
 def ensure_audio_config(config):
-    """Ensure audio config exists in the main config with ALL available settings"""
+    """Ensure audio config exists in the main config with core supported settings"""
     defaults = get_audio_default_config()
     config_updated = False
     

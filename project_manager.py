@@ -333,7 +333,19 @@ class ProjectManager:
                 'chunk_max_chars': 300,
                 'target_chars': 200,
                 'speed': 1.0,
-                'sample_rate': 24000
+                'sample_rate': 24000,
+                # SMOOTHNESS & PROSODY CONTROL PARAMETERS
+                'nfe_step': 20,
+                'cfg_strength': 1.3,
+                'sway_sampling_coef': 0.3,
+                'cross_fade_duration': 0.15,
+                'seed': -1,
+                'fix_duration': None,
+                'remove_silence': False,
+                # TEXT PREPROCESSING FOR BETTER PROSODY
+                'smart_chunking': True,
+                'add_pause_markers': True,
+                'normalize_numbers': True
             },
             'xtts': {
                 'model_name': 'tts_models/multilingual/multi-dataset/xtts_v2',
@@ -347,7 +359,7 @@ class ProjectManager:
                 'gpu_acceleration': True
             },
             'rvc': {
-                'model': 'Sigma Male Narrator',
+                'model': 'my_voice',
                 'speed_factor': 1.0,
                 'clean_silence': True,
                 'silence_threshold': -40.0,
@@ -373,68 +385,110 @@ class ProjectManager:
             }
         }
     
+    def _find_companion_text(self, audio_file):
+        """Find companion text file for audio"""
+        audio_path = Path(audio_file)
+        text_file = audio_path.with_suffix('.txt')
+        
+        if text_file.exists():
+            try:
+                with open(text_file, 'r', encoding='utf-8') as f:
+                    return f.read().strip()
+            except Exception as e:
+                print(f"⚠️ Could not read {text_file.name}: {e}")
+        
+        return ""
+
+    def _create_new_default_config(self, project_name, batch_name, tts_engine, sections, source_file):
+        """Create brand new config with defaults - ONLY for new projects"""
+        print(f"🆕 Creating new default config for engine: {tts_engine}")
+        
+        # Start with base defaults
+        config = self.get_default_config(tts_engine)
+        
+        # Set metadata
+        config['metadata'].update({
+            'batch_name': batch_name,
+            'project_name': project_name,
+            'tts_engine': tts_engine,
+            'sections': sections,
+            'source_file': str(source_file) if source_file else None,
+            'created_at': datetime.now().isoformat()
+        })
+        
+        # Auto-detect voice samples ONLY for new configs
+        if tts_engine in ['f5', 'xtts']:
+            voice_samples = self.find_voice_samples(project_name)
+            
+            if tts_engine == 'f5' and voice_samples:
+                config['f5']['ref_audio'] = str(voice_samples[0])
+                # Look for companion text file
+                companion_text = self._find_companion_text(voice_samples[0])
+                config['f5']['ref_text'] = companion_text
+                print(f"🎤 F5: Auto-detected {voice_samples[0].name}")
+                if companion_text:
+                    print(f"📝 F5: Found companion text ({len(companion_text)} chars)")
+                else:
+                    print(f"📝 F5: No companion text (will auto-transcribe)")
+            
+            elif tts_engine == 'xtts' and voice_samples:
+                if len(voice_samples) == 1:
+                    config['xtts']['speaker_wav'] = str(voice_samples[0])
+                else:
+                    config['xtts']['speaker_wav'] = [str(s) for s in voice_samples]
+                print(f"🎤 XTTS: Auto-detected {len(voice_samples)} sample(s)")
+        
+        return config
+
     def create_config(self, project_name, batch_name, tts_engine, sections=None, 
-                        source_file=None, inherit_from=None, cli_overrides=None):
-            """Create configuration for a batch with automatic voice sample detection"""
-            config = self.get_default_config(tts_engine)
+                            source_file=None, inherit_from=None, cli_overrides=None):
+        """Create configuration - FIXED: Strict Single Source of Truth"""
+        
+        # Try to load existing project config first
+        project_config_path = self.validate_project(project_name) / "config" / "config.json"
+        
+        if project_config_path.exists():
+            # CONFIG FILE EXISTS = SINGLE SOURCE OF TRUTH
+            # Load it AS-IS, make NO modifications except batch metadata
+            print(f"📄 Loading existing config: {project_config_path.name}")
             
-            # Update metadata
-            config['metadata'].update({
-                'batch_name': batch_name,
-                'project_name': project_name,
-                'tts_engine': tts_engine,
-                'sections': sections,
-                'source_file': str(source_file) if source_file else None
-            })
-            
-            # Try to inherit from existing project config
-            project_config_path = self.validate_project(project_name) / "config" / "config.json"
-            if project_config_path.exists():
-                try:
-                    parent_config = self.load_config(project_config_path)
-                    config = self._merge_configs(config, parent_config)
-                    config['metadata']['inherited_from'] = "config.json"
-                    print(f"📄 Inherited from: config.json")
-                except Exception as e:
-                    print(f"⚠️ Could not inherit from config.json: {e}")
-            
-            # Auto-detect and add voice samples AFTER inheritance (so it overrides inherited values)
-            if tts_engine in ['f5', 'xtts']:
-                if tts_engine == 'f5':
-                    voice_samples = self.find_voice_samples(project_name)
-                    if voice_samples:
-                        config['f5']['ref_audio'] = str(voice_samples[0])
-                        config['f5']['ref_text'] = ""  # Always empty for auto-transcription
-                        print(f"🎤 F5: Using {voice_samples[0].name} (auto-transcribe)")
-                    else:
-                        print(f"ℹ️ No voice samples found for F5")
-                        print(f"💡 Add .wav files to samples/ directory")
+            try:
+                config = self.load_config(project_config_path)
                 
-                elif tts_engine == 'xtts':
-                    # XTTS uses only audio files (ignores .txt files)
-                    voice_samples = self.find_voice_samples(project_name)
-                    if voice_samples:
-                        all_samples = self.get_all_voice_samples(project_name)
-                        if all_samples:
-                            if len(all_samples) == 1:
-                                config['xtts']['speaker_wav'] = str(all_samples[0])
-                            else:
-                                # Store multiple samples as a list (XTTS supports this)
-                                config['xtts']['speaker_wav'] = [str(s) for s in all_samples]
-                            print(f"🎤 XTTS: Using {len(all_samples)} audio sample(s)")
-                    else:
-                        print(f"ℹ️ No voice samples found for XTTS")
-                        print(f"💡 Add .wav files to samples/ directory")
-            else:
-                print(f"ℹ️ {tts_engine.upper()} doesn't use voice samples")
-            
-            # Apply CLI overrides LAST (so they override everything)
-            if cli_overrides:
-                for section, overrides in cli_overrides.items():
-                    if section in config:
-                        config[section].update(overrides)
-            
-            return config
+                # ONLY update batch-specific metadata - NOTHING ELSE
+                config['metadata'].update({
+                    'batch_name': batch_name,
+                    'project_name': project_name,
+                    'tts_engine': tts_engine,
+                    'sections': sections,
+                    'source_file': str(source_file) if source_file else None,
+                    'inherited_from': "config.json",
+                    'created_at': datetime.now().isoformat()
+                })
+                
+                print(f"✅ Config loaded AS-IS from {project_config_path.name}")
+                print(f"ℹ️  Using ALL settings exactly as stored in config file")
+                
+            except Exception as e:
+                print(f"❌ Could not load config.json: {e}")
+                print(f"📄 Creating new default config")
+                # Only create new if existing is corrupted
+                config = self._create_new_default_config(project_name, batch_name, tts_engine, sections, source_file)
+        
+        else:
+            # NO CONFIG FILE EXISTS = CREATE NEW DEFAULT
+            print(f"📄 No existing config found, creating new default config")
+            config = self._create_new_default_config(project_name, batch_name, tts_engine, sections, source_file)
+        
+        # Apply CLI overrides LAST (so user can override anything)
+        if cli_overrides:
+            print(f"⚙️  Applying CLI overrides")
+            for section, overrides in cli_overrides.items():
+                if section in config:
+                    config[section].update(overrides)
+                    print(f"   {section}: {overrides}")
+        
+        return config
     
     def save_config(self, config, config_path):
         """Save configuration to file"""
@@ -506,7 +560,7 @@ class ProjectManager:
         return base
     
     def display_config_summary(self, config):
-        """Display configuration summary"""
+        """Display configuration summary - FIXED: Handle auto-detected F5 audio"""
         print(f"🎛️ Configuration Summary")
         print(f"📋 Batch: {config['metadata']['batch_name']}")
         print(f"🎤 TTS Engine: {config['metadata']['tts_engine'].upper()}")
@@ -515,25 +569,39 @@ class ProjectManager:
             print(f"📄 Inherited from: {config['metadata']['inherited_from']}")
         
         engine = config['metadata']['tts_engine']
-        if engine == 'edge':
-            edge = config['edge']
-            print(f"🎙️ Voice: {edge['voice']}")
-            print(f"⚡ Rate: {edge['rate']}, Pitch: {edge['pitch']}")
-        elif engine == 'bark':
-            bark = config['bark']
-            print(f"🎙️ Voice: {bark['voice']}")
-            print(f"🌡️ Temps: text={bark['text_temp']}, waveform={bark['waveform_temp']}")
-        elif engine == 'f5':
-            f5 = config['f5']
-            print(f"🎙️ Model: {f5['model_name']}")
-            print(f"⚡ Speed: {f5['speed']}x")
-        elif engine == 'xtts':
-            xtts = config['xtts']
-            print(f"🎙️ Model: {xtts['model_name']}")
-            print(f"⚡ Speed: {xtts['speed']}x")
         
-        print(f"🎭 RVC Model: {config['rvc']['model']}")
-        print(f"⚡ Speed: {config['rvc']['speed_factor']}x")
+        # FIXED: Check if engine section exists before accessing it
+        if engine == 'edge' and 'edge' in config:
+            edge = config['edge']
+            print(f"🎙️ Voice: {edge.get('voice', 'Not set')}")
+            print(f"⚡ Rate: {edge.get('rate', 'Not set')}, Pitch: {edge.get('pitch', 'Not set')}")
+        elif engine == 'bark' and 'bark' in config:
+            bark = config['bark']
+            print(f"🎙️ Voice: {bark.get('voice', 'Not set')}")
+            print(f"🌡️ Temps: text={bark.get('text_temp', 'Not set')}, waveform={bark.get('waveform_temp', 'Not set')}")
+        elif engine == 'f5' and 'f5' in config:
+            f5 = config['f5']
+            print(f"🎙️ Model: {f5.get('model_name', 'Not set')}")
+            print(f"⚡ Speed: {f5.get('speed', 'Not set')}x")
+            
+            # Don't check config for ref_audio since it's auto-detected now
+            print(f"🎤 Reference audio: Auto-detected from samples/")
+            
+        elif engine == 'xtts' and 'xtts' in config:
+            xtts = config['xtts']
+            print(f"🎙️ Model: {xtts.get('model_name', 'Not set')}")
+            print(f"⚡ Speed: {xtts.get('speed', 'Not set')}x")
+        else:
+            # Engine section missing from config
+            print(f"⚠️ No {engine} section found in config file")
+            print(f"ℹ️ Engine will use its own defaults")
+        
+        # FIXED: Check if RVC section exists
+        if 'rvc' in config:
+            print(f"🎭 RVC Model: {config['rvc'].get('model', 'Not set')}")
+            print(f"⚡ Speed: {config['rvc'].get('speed_factor', 'Not set')}x")
+        else:
+            print(f"⚠️ No RVC section found in config file")
         
         if config['metadata'].get('sections'):
             sections = ', '.join(map(str, config['metadata']['sections']))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Engine Registry - Simple routing system for TTS engines
-Handles engine registration and config defaults
+Engine Registry - FIXED: No automatic config modifications
+The config file is the single source of truth
 """
 
 import sys
@@ -32,39 +32,36 @@ def get_engine_processor(engine_name):
     return _ENGINES[engine_name]['processor']
 
 def ensure_engine_config(config, engine_name):
-    """Ensure engine config exists, add defaults if missing"""
-    if engine_name not in _ENGINES:
-        raise ValueError(f"Unknown TTS engine: {engine_name}")
+    """REMOVED: No longer adds missing config sections
     
-    engine_info = _ENGINES[engine_name]
-    default_config = engine_info['default_config']
+    The config file is the single source of truth.
+    If a section is missing, the engine should handle it gracefully
+    or the user should add it to their config file.
+    """
+    # FIXED: Always return False - never modify config
+    print(f"STATUS: Using {engine_name} config AS-IS from config file", file=sys.stderr)
     
-    # Add missing config sections
-    config_updated = False
-    for section, defaults in default_config.items():
-        if section not in config:
-            config[section] = defaults.copy()
-            config_updated = True
-            print(f"STATUS: Added default {section} config for {engine_name}", file=sys.stderr)
-        else:
-            # Add missing keys within existing sections
-            for key, value in defaults.items():
-                if key not in config[section]:
-                    config[section][key] = value
-                    config_updated = True
+    if engine_name not in config:
+        print(f"WARNING: No {engine_name} section in config file", file=sys.stderr)
+        print(f"INFO: Engine will use its own defaults for missing parameters", file=sys.stderr)
+    else:
+        section_keys = list(config[engine_name].keys())
+        print(f"STATUS: Found {len(section_keys)} {engine_name} parameters in config", file=sys.stderr)
+        print(f"STATUS: {engine_name} config keys: {', '.join(section_keys)}", file=sys.stderr)
     
-    return config_updated
+    return False  # Never indicates config was updated
 
 def process_with_engine(engine_name, text_file, output_dir, config, paths):
-    """Process text file with the specified engine"""
+    """Process text file with the specified engine - NO config modification"""
     processor = get_engine_processor(engine_name)
     
-    # Ensure config has all required settings
-    ensure_engine_config(config, engine_name)
+    # REMOVED: No longer calls ensure_engine_config()
+    # The config file is used AS-IS
     
     print(f"STATUS: Processing with {engine_name.upper()} engine", file=sys.stderr)
+    print(f"STATUS: Config file is single source of truth", file=sys.stderr)
     
-    # Call the engine processor
+    # Call the engine processor with config AS-IS
     return processor(text_file, output_dir, config, paths)
 
 # Import and register engines when this module is loaded
