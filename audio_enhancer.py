@@ -264,16 +264,16 @@ def run_simple_enhancement(input_file, output_dir, audio_config):
     input_path = Path(input_file)
     output_dir = Path(output_dir)
     
-    # Determine output format (same logic as main function)
+    # Keep exact same filename as original
     if audio_config.get('force_format'):
         output_format = audio_config['force_format']
-        output_file = output_dir / f"{input_path.stem}_simple.{output_format}"
+        output_file = output_dir / f"{input_path.stem}.{output_format}"
     elif audio_config.get('preserve_format', True):
         output_format = input_path.suffix[1:].lower()
-        output_file = output_dir / f"{input_path.stem}_simple{input_path.suffix}"
+        output_file = output_dir / input_path.name  # Exact same name
     else:
         output_format = 'wav'
-        output_file = output_dir / f"{input_path.stem}_simple.wav"
+        output_file = output_dir / f"{input_path.stem}.wav"
     
     print(f"🔄 Trying simplified enhancement...")
     
@@ -327,16 +327,16 @@ def copy_with_conversion(input_file, output_dir, audio_config):
     input_path = Path(input_file)
     output_dir = Path(output_dir)
     
-    # Determine output format (same logic)
+    # Keep exact same filename as original
     if audio_config.get('force_format'):
         output_format = audio_config['force_format']
-        output_file = output_dir / f"{input_path.stem}_converted.{output_format}"
+        output_file = output_dir / f"{input_path.stem}.{output_format}"
     elif audio_config.get('preserve_format', True):
         output_format = input_path.suffix[1:].lower()
-        output_file = output_dir / f"{input_path.stem}_converted{input_path.suffix}"
+        output_file = output_dir / input_path.name  # Exact same name
     else:
         output_format = 'wav'
-        output_file = output_dir / f"{input_path.stem}_converted.wav"
+        output_file = output_dir / f"{input_path.stem}.wav"
     
     print(f"🔄 Converting without enhancement...")
     
