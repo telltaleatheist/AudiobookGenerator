@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Project Manager - Clean project and configuration management
-Handles project creation, source files, batch naming, and config inheritance
-Updated with automatic voice sample pairing for F5/XTTS and PDF support
+NOW COPIES DEFAULT CONFIG instead of generating it
 """
 
 import os
@@ -11,6 +10,7 @@ import shutil
 import re
 from pathlib import Path
 from datetime import datetime
+import sys
 
 class ProjectManager:
     """Manages audiobook projects and configurations"""
@@ -18,9 +18,16 @@ class ProjectManager:
     def __init__(self, base_dir="output"):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(exist_ok=True)
+        
+        # Path to default config file
+        self.default_config_path = Path("default_config.json")
+        if not self.default_config_path.exists():
+            # Fallback to look in script directory
+            script_dir = Path(__file__).parent
+            self.default_config_path = script_dir / "default_config.json"
     
     def create_project(self, name):
-        """Create a new project with basic structure"""
+        """Create a new project with basic structure and copy default config"""
         if not re.match(r'^[a-zA-Z0-9_-]+$', name):
             raise ValueError(f"Invalid project name: {name}")
         
@@ -35,6 +42,19 @@ class ProjectManager:
         (project_dir / "jobs").mkdir()
         (project_dir / "samples").mkdir()
         
+        # Copy default config file
+        project_config_path = project_dir / "config" / "config.json"
+        if self.default_config_path.exists():
+            shutil.copy2(self.default_config_path, project_config_path)
+            print(f"📄 Copied default config to: {project_config_path}")
+            
+            # Update metadata in the copied config
+            self._update_project_metadata(project_config_path, name)
+        else:
+            print(f"⚠️ Default config not found at {self.default_config_path}")
+            print(f"💡 Please create default_config.json in the project root")
+            raise FileNotFoundError(f"Default config file not found: {self.default_config_path}")
+        
         # Create README
         readme = f"""# Audiobook Project: {name}
 
@@ -44,10 +64,14 @@ class ProjectManager:
 - Run: `python AudiobookGenerator.py --project {name}`
 - Process sections: `python AudiobookGenerator.py --project {name} --sections 1 2 3`
 
+## Configuration
+- Edit `config/config.json` to customize TTS and RVC settings
+- The config file contains all available parameters for each engine
+
 ## Structure
 - `source/` - Input files (.epub, .pdf, .txt)
 - `samples/` - Voice reference audio files for cloning
-- `config/` - Batch configurations
+- `config/` - Project configuration (copied from default_config.json)
 - `jobs/` - Processing outputs (batches/sections)
 """
         
@@ -55,6 +79,28 @@ class ProjectManager:
         
         print(f"✅ Created project '{name}' at {project_dir}")
         return project_dir
+    
+    def _update_project_metadata(self, config_path, project_name):
+        """Update metadata in the copied config file"""
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Update metadata
+            if 'metadata' not in config:
+                config['metadata'] = {}
+            
+            config['metadata'].update({
+                'created_at': datetime.now().isoformat(),
+                'project_name': project_name,
+                'config_source': 'default_config.json'
+            })
+            
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+                
+        except Exception as e:
+            print(f"⚠️ Could not update config metadata: {e}")
     
     def validate_project(self, name):
         """Ensure project exists and has proper structure"""
@@ -66,6 +112,17 @@ class ProjectManager:
         (project_dir / "source").mkdir(exist_ok=True)
         (project_dir / "config").mkdir(exist_ok=True)
         (project_dir / "samples").mkdir(exist_ok=True)
+        
+        # Ensure config file exists
+        config_path = project_dir / "config" / "config.json"
+        if not config_path.exists():
+            print(f"⚠️ Config file missing, copying from default")
+            if self.default_config_path.exists():
+                shutil.copy2(self.default_config_path, config_path)
+                self._update_project_metadata(config_path, name)
+                print(f"📄 Created config from default: {config_path}")
+            else:
+                raise FileNotFoundError(f"No config file and no default config found")
         
         return project_dir
     
@@ -306,187 +363,70 @@ class ProjectManager:
         paths['temp_dir'].mkdir(exist_ok=True)
         return paths
     
-    def get_default_config(self, tts_engine):
-        """Get default configuration for engine"""
-        return {
-            'metadata': {
-                'created_at': datetime.now().isoformat(),
-                'tts_engine': tts_engine
-            },
-            'bark': {
-                'voice': 'v2/en_speaker_0',
-                'text_temp': 0.1,
-                'waveform_temp': 0.15
-            },
-            'edge': {
-                'voice': 'en-US-AriaNeural',
-                'rate': '+0%',
-                'pitch': '+0Hz',
-                'volume': '+0%',
-                'delay': 1.5
-            },
-            'f5': {
-                'model_type': 'F5-TTS',
-                'model_name': 'F5TTS_Base',
-                'ref_audio': None,
-                'ref_text': None,
-                'chunk_max_chars': 300,
-                'target_chars': 200,
-                'speed': 1.0,
-                'sample_rate': 24000,
-                # SMOOTHNESS & PROSODY CONTROL PARAMETERS
-                'nfe_step': 20,
-                'cfg_strength': 1.3,
-                'sway_sampling_coef': 0.3,
-                'cross_fade_duration': 0.15,
-                'seed': -1,
-                'fix_duration': None,
-                'remove_silence': False,
-                # TEXT PREPROCESSING FOR BETTER PROSODY
-                'smart_chunking': True,
-                'add_pause_markers': True,
-                'normalize_numbers': True
-            },
-            'xtts': {
-                'model_name': 'tts_models/multilingual/multi-dataset/xtts_v2',
-                'language': 'en',
-                'speaker': None,
-                'speaker_wav': None,
-                'chunk_max_chars': 400,
-                'target_chars': 300,
-                'speed': 1.0,
-                'temperature': 0.75,
-                'gpu_acceleration': True
-            },
-            'rvc': {
-                'model': 'my_voice',
-                'speed_factor': 1.0,
-                'clean_silence': True,
-                'silence_threshold': -40.0,
-                'silence_duration': 0.6,
-                'n_semitones': -2,
-                'f0_method': 'crepe',
-                'index_rate': 0.4,
-                'protect_rate': 0.4,
-                'rms_mix_rate': 0.5,
-                'hop_length': 64,
-                'split_voice': True,
-                'clean_voice': True,
-                'clean_strength': 0.5,
-                'autotune_voice': True,
-                'autotune_strength': 0.3
-            },
-            'audio': {
-                'silence_gap': 0.3
-            },
-            'pipeline': {
-                'cleanup_temp_files': True,
-                'cleanup_intermediate_files': True
-            }
-        }
-    
-    def _find_companion_text(self, audio_file):
-        """Find companion text file for audio"""
-        audio_path = Path(audio_file)
-        text_file = audio_path.with_suffix('.txt')
+    def create_config(self, project_name, batch_name, tts_engine, sections=None, 
+                            source_file=None, inherit_from=None, cli_overrides=None):
+        """Load and update existing config (NO MORE CONFIG GENERATION)"""
         
-        if text_file.exists():
-            try:
-                with open(text_file, 'r', encoding='utf-8') as f:
-                    return f.read().strip()
-            except Exception as e:
-                print(f"⚠️ Could not read {text_file.name}: {e}")
+        # Load the existing project config
+        project_config_path = self.validate_project(project_name) / "config" / "config.json"
         
-        return ""
-
-    def _create_new_default_config(self, project_name, batch_name, tts_engine, sections, source_file):
-        """Create brand new config with defaults - ONLY for new projects"""
-        print(f"🆕 Creating new default config for engine: {tts_engine}")
+        try:
+            config = self.load_config(project_config_path)
+            print(f"📄 Loaded config from: config.json")
+        except Exception as e:
+            raise ValueError(f"Could not load project config: {e}")
         
-        # Start with base defaults
-        config = self.get_default_config(tts_engine)
-        
-        # Set metadata
+        # Update metadata for this specific job
+        if 'metadata' not in config:
+            config['metadata'] = {}
+            
         config['metadata'].update({
+            'last_accessed': datetime.now().isoformat(),
             'batch_name': batch_name,
-            'project_name': project_name,
             'tts_engine': tts_engine,
             'sections': sections,
             'source_file': str(source_file) if source_file else None,
-            'created_at': datetime.now().isoformat()
+            'last_batch': batch_name
         })
         
-        # Auto-detect voice samples ONLY for new configs
+        # Auto-detect and add voice samples AFTER loading config
         if tts_engine in ['f5', 'xtts']:
-            voice_samples = self.find_voice_samples(project_name)
-            
-            if tts_engine == 'f5' and voice_samples:
-                config['f5']['ref_audio'] = str(voice_samples[0])
-                # Look for companion text file
-                companion_text = self._find_companion_text(voice_samples[0])
-                config['f5']['ref_text'] = companion_text
-                print(f"🎤 F5: Auto-detected {voice_samples[0].name}")
-                if companion_text:
-                    print(f"📝 F5: Found companion text ({len(companion_text)} chars)")
+            if tts_engine == 'f5':
+                voice_samples = self.find_voice_samples(project_name)
+                if voice_samples:
+                    config['f5']['ref_audio'] = str(voice_samples[0])
+                    config['f5']['ref_text'] = ""  # Always empty for auto-transcription
+                    print(f"🎤 F5: Using {voice_samples[0].name} (auto-transcribe)")
                 else:
-                    print(f"📝 F5: No companion text (will auto-transcribe)")
+                    print(f"ℹ️ No voice samples found for F5")
+                    print(f"💡 Add .wav files to samples/ directory")
             
-            elif tts_engine == 'xtts' and voice_samples:
-                if len(voice_samples) == 1:
-                    config['xtts']['speaker_wav'] = str(voice_samples[0])
+            elif tts_engine == 'xtts':
+                # XTTS uses only audio files (ignores .txt files)
+                voice_samples = self.find_voice_samples(project_name)
+                if voice_samples:
+                    all_samples = self.get_all_voice_samples(project_name)
+                    if all_samples:
+                        if len(all_samples) == 1:
+                            config['xtts']['speaker_wav'] = str(all_samples[0])
+                        else:
+                            # Store multiple samples as a list (XTTS supports this)
+                            config['xtts']['speaker_wav'] = [str(s) for s in all_samples]
+                        print(f"🎤 XTTS: Using {len(all_samples)} audio sample(s)")
                 else:
-                    config['xtts']['speaker_wav'] = [str(s) for s in voice_samples]
-                print(f"🎤 XTTS: Auto-detected {len(voice_samples)} sample(s)")
-        
-        return config
-
-    def create_config(self, project_name, batch_name, tts_engine, sections=None, 
-                            source_file=None, inherit_from=None, cli_overrides=None):
-        """Create configuration - FIXED: Strict Single Source of Truth"""
-        
-        # Try to load existing project config first
-        project_config_path = self.validate_project(project_name) / "config" / "config.json"
-        
-        if project_config_path.exists():
-            # CONFIG FILE EXISTS = SINGLE SOURCE OF TRUTH
-            # Load it AS-IS, make NO modifications except batch metadata
-            print(f"📄 Loading existing config: {project_config_path.name}")
-            
-            try:
-                config = self.load_config(project_config_path)
-                
-                # ONLY update batch-specific metadata - NOTHING ELSE
-                config['metadata'].update({
-                    'batch_name': batch_name,
-                    'project_name': project_name,
-                    'tts_engine': tts_engine,
-                    'sections': sections,
-                    'source_file': str(source_file) if source_file else None,
-                    'inherited_from': "config.json",
-                    'created_at': datetime.now().isoformat()
-                })
-                
-                print(f"✅ Config loaded AS-IS from {project_config_path.name}")
-                print(f"ℹ️  Using ALL settings exactly as stored in config file")
-                
-            except Exception as e:
-                print(f"❌ Could not load config.json: {e}")
-                print(f"📄 Creating new default config")
-                # Only create new if existing is corrupted
-                config = self._create_new_default_config(project_name, batch_name, tts_engine, sections, source_file)
-        
+                    print(f"ℹ️ No voice samples found for XTTS")
+                    print(f"💡 Add .wav files to samples/ directory")
         else:
-            # NO CONFIG FILE EXISTS = CREATE NEW DEFAULT
-            print(f"📄 No existing config found, creating new default config")
-            config = self._create_new_default_config(project_name, batch_name, tts_engine, sections, source_file)
+            print(f"ℹ️ {tts_engine.upper()} doesn't use voice samples")
         
-        # Apply CLI overrides LAST (so user can override anything)
+        # Apply CLI overrides LAST (so they override everything)
         if cli_overrides:
-            print(f"⚙️  Applying CLI overrides")
             for section, overrides in cli_overrides.items():
                 if section in config:
                     config[section].update(overrides)
-                    print(f"   {section}: {overrides}")
+                else:
+                    # If the section doesn't exist, create it
+                    config[section] = overrides
         
         return config
     
@@ -503,106 +443,80 @@ class ProjectManager:
         with open(config_path, 'r') as f:
             return json.load(f)
     
-    def find_config(self, project_name, config_spec):
-        """Find config file by name or path"""
-        project_dir = self.validate_project(project_name)
-        config_dir = project_dir / "config"
-        
-        # Try as direct path
-        config_path = Path(config_spec)
-        if config_path.is_absolute() and config_path.exists():
-            return config_path
-        
-        # Try relative to project
-        project_relative = project_dir / config_spec
-        if project_relative.exists():
-            return project_relative
-        
-        # Try in config directory
-        config_file = config_dir / config_spec
-        if config_file.exists():
-            return config_file
-        
-        # Try with .json extension
-        if not config_spec.endswith('.json'):
-            config_file = config_dir / f"{config_spec}.json"
-            if config_file.exists():
-                return config_file
-        
-        available = [f.name for f in config_dir.glob("*.json")]
-        if available:
-            raise ValueError(f"Config '{config_spec}' not found. Available: {', '.join(available)}")
-        else:
-            raise ValueError(f"Config '{config_spec}' not found. No configs exist yet.")
-    
-    def get_most_recent_config(self, project_name):
-        """Get most recently created config"""
-        project_dir = self.validate_project(project_name)
-        config_dir = project_dir / "config"
-        
-        configs = list(config_dir.glob("*.json"))
-        if not configs:
-            return None
-        
-        return max(configs, key=lambda p: p.stat().st_mtime)
-    
-    def _merge_configs(self, base, parent):
-        """Deep merge parent config into base, preserving base metadata"""
-        base_metadata = base.get('metadata', {})
-        
-        for section, values in parent.items():
-            if section == 'metadata':
-                continue  # Don't inherit metadata
-            if section in base and isinstance(values, dict):
-                base[section].update(values)
-        
-        base['metadata'] = base_metadata
-        return base
-    
     def display_config_summary(self, config):
-        """Display configuration summary - FIXED: Handle auto-detected F5 audio"""
+        """Display configuration summary"""
         print(f"🎛️ Configuration Summary")
         print(f"📋 Batch: {config['metadata']['batch_name']}")
         print(f"🎤 TTS Engine: {config['metadata']['tts_engine'].upper()}")
         
-        if config['metadata'].get('inherited_from'):
-            print(f"📄 Inherited from: {config['metadata']['inherited_from']}")
+        if config['metadata'].get('config_source'):
+            print(f"📄 Config source: {config['metadata']['config_source']}")
         
         engine = config['metadata']['tts_engine']
-        
-        # FIXED: Check if engine section exists before accessing it
-        if engine == 'edge' and 'edge' in config:
+        if engine == 'edge':
             edge = config['edge']
-            print(f"🎙️ Voice: {edge.get('voice', 'Not set')}")
-            print(f"⚡ Rate: {edge.get('rate', 'Not set')}, Pitch: {edge.get('pitch', 'Not set')}")
-        elif engine == 'bark' and 'bark' in config:
+            print(f"🎙️ Voice: {edge['voice']}")
+            print(f"⚡ Rate: {edge['rate']}, Pitch: {edge['pitch']}")
+        elif engine == 'bark':
             bark = config['bark']
-            print(f"🎙️ Voice: {bark.get('voice', 'Not set')}")
-            print(f"🌡️ Temps: text={bark.get('text_temp', 'Not set')}, waveform={bark.get('waveform_temp', 'Not set')}")
-        elif engine == 'f5' and 'f5' in config:
+            print(f"🎙️ Voice: {bark['voice']}")
+            print(f"🌡️ Temps: text={bark['text_temp']}, waveform={bark['waveform_temp']}")
+        elif engine == 'f5':
             f5 = config['f5']
-            print(f"🎙️ Model: {f5.get('model_name', 'Not set')}")
-            print(f"⚡ Speed: {f5.get('speed', 'Not set')}x")
-            
-            # Don't check config for ref_audio since it's auto-detected now
-            print(f"🎤 Reference audio: Auto-detected from samples/")
-            
-        elif engine == 'xtts' and 'xtts' in config:
+            print(f"🎙️ Model: {f5['model_name']}")
+            print(f"⚡ Speed: {f5['speed']}x")
+        elif engine == 'xtts':
             xtts = config['xtts']
-            print(f"🎙️ Model: {xtts.get('model_name', 'Not set')}")
-            print(f"⚡ Speed: {xtts.get('speed', 'Not set')}x")
-        else:
-            # Engine section missing from config
-            print(f"⚠️ No {engine} section found in config file")
-            print(f"ℹ️ Engine will use its own defaults")
+            print(f"🎙️ Model: {xtts['model_name']}")
+            print(f"⚡ Speed: {xtts['speed']}x")
         
-        # FIXED: Check if RVC section exists
+        # Handle both old and new RVC config structures
         if 'rvc' in config:
-            print(f"🎭 RVC Model: {config['rvc'].get('model', 'Not set')}")
-            print(f"⚡ Speed: {config['rvc'].get('speed_factor', 'Not set')}x")
+            # Old structure
+            print(f"🎭 RVC Model: {config['rvc']['model']}")
+            print(f"⚡ Speed: {config['rvc']['speed_factor']}x")
         else:
-            print(f"⚠️ No RVC section found in config file")
+            # New structure - show selected voice
+            rvc_voice = config.get('metadata', {}).get('rvc_voice', 'my_voice')
+            if rvc_voice == 'my_voice' and 'rvc_my_voice' in config:
+                print(f"🎭 RVC Model: {config['rvc_my_voice']['model']}")
+            elif rvc_voice == 'sigma_male_narrator' and 'rvc_sigma_male_narrator' in config:
+                print(f"🎭 RVC Model: {config['rvc_sigma_male_narrator']['model']}")
+            else:
+                print(f"🎭 RVC Voice: {rvc_voice}")
+            
+            # Show speed from global config
+            if 'rvc_global' in config:
+                print(f"⚡ Speed: {config['rvc_global']['speed_factor']}x")
         
         if config['metadata'].get('sections'):
             sections = ', '.join(map(str, config['metadata']['sections']))
             print(f"🎯 Sections: {sections}")
+    
+    def update_config_timestamp(self, config_path, batch_name):
+        """Update only the timestamp and last batch info in main config"""
+        config_path = Path(config_path)
+        
+        if config_path.exists():
+            try:
+                # Load existing config
+                with open(config_path, 'r') as f:
+                    existing_config = json.load(f)
+                
+                # Update only metadata timestamps, don't touch anything else
+                if 'metadata' not in existing_config:
+                    existing_config['metadata'] = {}
+                
+                existing_config['metadata']['last_accessed'] = datetime.now().isoformat()
+                existing_config['metadata']['last_batch'] = batch_name
+                
+                # Save back with minimal changes
+                with open(config_path, 'w') as f:
+                    json.dump(existing_config, f, indent=2)
+                
+                print(f"STATUS: Updated config timestamp for batch: {batch_name}", file=sys.stderr)
+                
+            except Exception as e:
+                print(f"WARNING: Could not update config timestamp: {e}", file=sys.stderr)
+        else:
+            print(f"WARNING: Main config file not found: {config_path}", file=sys.stderr)
