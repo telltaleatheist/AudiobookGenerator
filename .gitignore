@@ -104,3 +104,47 @@ raw/cleaned/talarico-1_simple.mov
 raw/cleaned/talarico-2_simple.mov
 raw/cleaned/talarico-3_simple.mov
 raw/cleaned/talarico-4_simple.mov
+night.bat
+train_my_voice.bat
+train-model.bat
+__pycache__/audio_processor.cpython-313.pyc
+__pycache__/bark_engine.cpython-313.pyc
+__pycache__/edge_engine.cpython-313.pyc
+__pycache__/engine_registry.cpython-313.pyc
+__pycache__/f5_engine.cpython-313.pyc
+__pycache__/pipeline_manager.cpython-313.pyc
+__pycache__/preprocessing.cpython-313.pyc
+__pycache__/project_manager.cpython-313.pyc
+__pycache__/xtts_engine.cpython-313.pyc
+misc/sample-10m-expressive.txt
+misc/sample-10m-expressive.wav
+misc/sample-kylie-expressive-12s.wav
+misc/sample-less-expressive-12s-2.wav
+misc/sample-less-expressive-12s.txt
+misc/sample-less-expressive-12s.wav
+misc/sample-manuscript-12s 1.wav
+misc/sample-manuscript-12s 2.wav
+misc/sample-manuscript-12s 3.wav
+misc/training data - preface and chapter 1.txt
+misc/training data - preface and chapter 1.wav
+misc/rvc training samples/Understanding Jehovah's Witnesses, by Owen Morgan (audiobook).mp3
+samples/sample-10m-expressive.txt
+samples/sample-10m-expressive.wav
+samples/best/sample-manuscript-12s 2.txt
+samples/best/sample-manuscript-12s 2.wav
+samples/draft 7/sample-1-aliens.mp3
+samples/draft 7/sample-1-aliens.txt
+samples/draft 7/sample-2-lights-flicker.mp3
+samples/draft 7/sample-2-lights-flicker.txt
+samples/draft 7/sample-3-conscious-mind.mp3
+samples/draft 7/sample-3-conscious-mind.txt
+samples/draft 7/sample-4-nazi-germany.mp3
+samples/draft 7/sample-4-nazi-germany.txt
+samples/draft 7/sample-5-resistance-networks.mp3
+samples/draft 7/sample-5-resistance-networks.txt
+samples/draft 7/sample-6-jw-changes.mp3
+samples/draft 7/sample-6-jw-changes.txt
+samples/draft 7/sample-7-missing-people.mp3
+samples/draft 7/sample-7-missing-people.txt
+samples/draft 7/sample-8-jw-chronology.mp3
+samples/draft 7/sample-8-jw-chronology.txt
