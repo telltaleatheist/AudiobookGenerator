@@ -470,7 +470,7 @@ class ProjectManager:
             print(f"🎙️ Model: {xtts['model_name']}")
             print(f"⚡ Speed: {xtts['speed']}x")
         
-        rvc_voice = config.get('metadata', {}).get('rvc_voice', 'my_voice')
+        rvc_voice = config.get('metadata', {}).get('rvc_voice', 'sigma_male_narrator')
         rvc_voice_key = f'rvc_{rvc_voice}'
         
         if rvc_voice_key in config:

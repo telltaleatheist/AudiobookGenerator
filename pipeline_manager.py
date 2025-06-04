@@ -323,7 +323,7 @@ class PipelineManager:
         
         # Determine which RVC voice to use
         if rvc_voice is None:
-            rvc_voice = config.get('metadata', {}).get('rvc_voice', 'my_voice')
+            rvc_voice = config.get('metadata', {}).get('rvc_voice', 'sigma_male_narrator')
         
         print(f"STATUS: Using RVC voice: {rvc_voice}", file=sys.stderr)
 

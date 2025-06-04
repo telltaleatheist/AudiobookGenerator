@@ -1,8 +1,10 @@
-# AudiobookGenerator Development Documentation v2.0
+# AudiobookGenerator Development Documentation v2.1
 
 ## Overview
 
 AudiobookGenerator is a sophisticated Python-based audiobook generation system that converts text documents (EPUB, PDF, TXT) into high-quality audiobooks using multiple TTS engines and voice conversion technology. The system features a **dynamic configuration architecture** where all settings are externally controlled via JSON configuration files, eliminating hardcoded parameters.
+
+**NEW in v2.1**: **Multi-Voice RVC System** with dynamic voice discovery and management.
 
 ## System Architecture
 
@@ -55,6 +57,122 @@ output/
 │   └── README.md
 ├── default_config.json   # Master configuration template
 ```
+
+## Multi-Voice RVC System (NEW v2.1)
+
+### Architecture Overview
+
+The system now supports **unlimited RVC voice profiles** with automatic discovery and dynamic configuration management. Each voice profile has its own configuration section that can be independently managed.
+
+### Configuration Structure
+
+```json
+{
+  "rvc_global": {
+    "speed_factor": 1.0,
+    "f0_method": "crepe",
+    "clean_voice": true,
+    "clean_strength": 0.3,
+    "autotune_voice": true
+  },
+  "rvc_my_voice": {
+    "model": "my_voice",
+    "n_semitones": -2,
+    "index_rate": 0.35,
+    "protect_rate": 0.15,
+    "rms_mix_rate": 0.4
+  },
+  "rvc_sigma_male_narrator": {
+    "model": "Sigma Male Narrator",
+    "n_semitones": -4,
+    "index_rate": 0.4,
+    "protect_rate": 0.4,
+    "rms_mix_rate": 0.5
+  },
+  "rvc_owen_morgan": {
+    "model": "Owen Morgan",
+    "n_semitones": -1,
+    "index_rate": 0.45,
+    "protect_rate": 0.3
+  }
+}
+```
+
+### Voice Management Features
+
+#### Automatic Voice Discovery
+```python
+# System automatically discovers all RVC voices
+available_voices = [k.replace('rvc_', '') for k in config.keys() 
+                   if k.startswith('rvc_') and k != 'rvc_global']
+# Result: ['my_voice', 'sigma_male_narrator', 'owen_morgan']
+```
+
+#### Command Line Interface
+```bash
+# List available voices
+python AudiobookGenerator.py --project mybook --list-rvc-voices
+
+# Select specific voice
+python AudiobookGenerator.py --project mybook --rvc-voice sigma_male_narrator
+
+# Use global speed override
+python AudiobookGenerator.py --project mybook --rvc-voice owen_morgan --speed 1.1
+
+# Legacy support (deprecated)
+python AudiobookGenerator.py --project mybook --rvc-model sigma_male_narrator
+```
+
+#### Voice Validation
+- **Automatic validation** of voice names before processing
+- **Error messages** with available voice suggestions
+- **Graceful fallback** to default voice if unspecified
+
+### Voice Configuration Inheritance
+
+The system uses a **hierarchical configuration model**:
+
+1. **Global Settings** (`rvc_global`) - Apply to all voices
+2. **Voice-Specific Settings** (`rvc_voicename`) - Override global settings
+3. **CLI Overrides** - Override both global and voice-specific settings
+
+```python
+# Configuration merging logic
+rvc_global = config.get('rvc_global', {})
+rvc_voice_config = config[f'rvc_{selected_voice}']
+final_config = {**rvc_global, **rvc_voice_config}
+```
+
+### Adding New Voices
+
+Adding new RVC voices is completely **plug-and-play**:
+
+1. **Add configuration section**:
+```json
+{
+  "rvc_celebrity_voice": {
+    "model": "Celebrity Voice Model",
+    "n_semitones": 0,
+    "index_rate": 0.3,
+    "protect_rate": 0.25
+  }
+}
+```
+
+2. **Voice automatically available**:
+```bash
+python AudiobookGenerator.py --project mybook --rvc-voice celebrity_voice
+```
+
+No code changes required - the system automatically discovers and validates new voices.
+
+### Default Voice Configuration
+
+The system defaults to `sigma_male_narrator` if no voice is specified. This can be changed by updating the default value in:
+
+- `audio_processor.py`: `process_audio_through_rvc()` function
+- `project_manager.py`: `display_config_summary()` function
+- `default_config.json`: metadata section
 
 ## Dynamic Configuration System
 
@@ -182,18 +300,19 @@ project/samples/
 - **XTTS**: Uses all `.wav` files (supports multiple references)
 - **Bark/Edge**: Use built-in voices (ignore samples directory)
 
-## RVC (Real-time Voice Conversion)
+## RVC (Real-time Voice Conversion) - UPDATED v2.1
 
 ### Multi-Voice RVC System
 
-Supports multiple voice profiles with global + voice-specific settings:
+The RVC system now supports unlimited voice profiles with **global + voice-specific settings**:
 
 ```json
 {
   "rvc_global": {
     "speed_factor": 1.0,
     "f0_method": "crepe",
-    "clean_voice": true
+    "clean_voice": true,
+    "hop_length": 64
   },
   "rvc_my_voice": {
     "model": "my_voice",
@@ -202,16 +321,47 @@ Supports multiple voice profiles with global + voice-specific settings:
   },
   "rvc_sigma_male_narrator": {
     "model": "Sigma Male Narrator", 
-    "n_semitones": -6,
+    "n_semitones": -4,
+    "index_rate": 0.4
+  },
+  "rvc_celebrity_voice": {
+    "model": "Celebrity Voice Model",
+    "n_semitones": 0,
     "index_rate": 0.3
   }
 }
 ```
 
-**Voice Selection:**
+### Voice Selection and Usage
+
 ```bash
+# Select voice during processing
 python AudiobookGenerator.py --project mybook --rvc-voice sigma_male_narrator
+
+# List available voices
+python AudiobookGenerator.py --project mybook --list-rvc-voices
+
+# Override settings for specific voice
+python AudiobookGenerator.py --project mybook --rvc-voice owen_morgan --speed 1.1
 ```
+
+### RVC Command Generation
+
+The system automatically generates RVC commands with combined settings:
+
+```bash
+# Generated command example:
+urvc generate convert-voice input.wav output_dir "Sigma Male Narrator" \
+  --n-semitones -4 --f0-method crepe --index-rate 0.4 --protect-rate 0.4 \
+  --rms-mix-rate 0.5 --hop-length 64 --split-voice --clean-voice \
+  --autotune-voice --clean-strength 0.3 --autotune-strength 0.3
+```
+
+### Configuration Management
+
+- **No old RVC config** - System completely migrated to new multi-voice structure
+- **Automatic cleanup** - Removes legacy `rvc` sections if found
+- **Backward compatibility** - Legacy `--rvc-model` parameter still works (deprecated)
 
 ## Text Processing and Preprocessing
 
@@ -231,7 +381,7 @@ python AudiobookGenerator.py --project mybook --rvc-voice sigma_male_narrator
 - **Configurable text preprocessing** per engine
 - **Smart punctuation and abbreviation handling**
 
-## Command Line Interface
+## Command Line Interface - UPDATED v2.1
 
 ### Core Usage Patterns
 
@@ -240,6 +390,11 @@ python AudiobookGenerator.py --project mybook --rvc-voice sigma_male_narrator
 python AudiobookGenerator.py --init mybook
 python AudiobookGenerator.py --project mybook --input book.epub
 python AudiobookGenerator.py --project mybook --tts-engine f5 --rvc-voice sigma_male_narrator
+
+# RVC voice management (NEW)
+python AudiobookGenerator.py --project mybook --list-rvc-voices
+python AudiobookGenerator.py --project mybook --rvc-voice owen_morgan
+python AudiobookGenerator.py --project mybook --rvc-voice celebrity_voice --speed 1.1
 
 # Advanced features
 python AudiobookGenerator.py --project mybook --interactive-start
@@ -252,6 +407,9 @@ python AudiobookGenerator.py --project mybook --batch-name "quality-test"
 ```bash
 # Engine parameters can be overridden via CLI
 python AudiobookGenerator.py --project mybook --bark-text-temp 0.2 --speed 1.2
+
+# Voice-specific RVC overrides (future feature)
+python AudiobookGenerator.py --project mybook --rvc-voice owen_morgan --rvc-semitones -3
 ```
 
 ## Configuration Snapshots and Analysis
@@ -269,7 +427,7 @@ python AudiobookGenerator.py --project mybook --bark-text-temp 0.2 --speed 1.2
 - 🔄 **Reproducibility** - Copy any job's config to reproduce results
 - 📈 **Optimization** - Identify best settings over time
 
-### Example Config Summary
+### Example Config Summary (Updated)
 ```txt
 === AUDIOBOOK GENERATION CONFIG SUMMARY ===
 Generated: 2025-06-04 15:30:45
@@ -278,6 +436,7 @@ Generated: 2025-06-04 15:30:45
 Project: mybook
 Batch: complete
 TTS Engine: f5
+RVC Voice: sigma_male_narrator
 Sections: All
 
 === F5 ENGINE SETTINGS ===
@@ -286,10 +445,16 @@ cfg_strength: 1.5
 nfe_step: 128
 ref_audio: samples/my_voice.wav
 
-=== RVC SETTINGS (sigma_male_narrator) ===
+=== RVC GLOBAL SETTINGS ===
+speed_factor: 1.0
+f0_method: crepe
+clean_voice: true
+
+=== RVC VOICE SETTINGS (sigma_male_narrator) ===
 model: Sigma Male Narrator
-n_semitones: -6
-index_rate: 0.3
+n_semitones: -4
+index_rate: 0.4
+protect_rate: 0.4
 ```
 
 ## Error Handling and Quality Control
@@ -313,6 +478,12 @@ index_rate: 0.3
 - **Audio validation** and automatic correction
 - **Progress tracking** with detailed logging
 
+### RVC Voice Validation (NEW)
+
+- **Pre-processing validation** of voice names
+- **Clear error messages** with available voice suggestions
+- **Graceful handling** of missing or invalid voice configurations
+
 ## Development Workflow
 
 ### Adding New Parameters
@@ -328,6 +499,27 @@ index_rate: 0.3
 2. Parameter automatically detected and used
 3. Done!
 
+### Adding New RVC Voices (NEW v2.1)
+
+**Super Simple Process:**
+1. **Add config section**:
+```json
+{
+  "rvc_new_voice": {
+    "model": "New Voice Model",
+    "n_semitones": 0,
+    "index_rate": 0.4
+  }
+}
+```
+
+2. **Voice immediately available**:
+```bash
+python AudiobookGenerator.py --project mybook --rvc-voice new_voice
+```
+
+**No code changes needed!**
+
 ### Testing and Optimization
 
 1. **Create test project**:
@@ -337,7 +529,7 @@ index_rate: 0.3
 
 2. **Add test content and run**:
    ```bash
-   python AudiobookGenerator.py --project test-project --tts-engine f5
+   python AudiobookGenerator.py --project test-project --tts-engine f5 --rvc-voice sigma_male_narrator
    ```
 
 3. **Compare config snapshots** to find optimal settings
@@ -419,6 +611,7 @@ Each engine has optimized defaults but fully configurable:
 2. **Web Interface**: Browser-based project management
 3. **Batch Processing**: Multiple projects simultaneously
 4. **Advanced Analytics**: Quality metrics and optimization suggestions
+5. **Voice Profile Templates**: Quick setup for common voice types
 
 ### Architecture Improvements
 1. **Plugin System**: Hot-swappable engine plugins
@@ -426,19 +619,20 @@ Each engine has optimized defaults but fully configurable:
 3. **Real-time Monitoring**: Live progress and quality tracking
 4. **Advanced Configuration**: GUI-based parameter tuning
 
-## Migration from v1.0
+## Migration from v2.0
 
-### Key Changes
-- ✅ **External configuration**: All parameters in JSON files
-- ✅ **Dynamic loading**: No hardcoded engine parameters
-- ✅ **Config snapshots**: Complete reproducibility
-- ✅ **Enhanced quality**: Better error handling and optimization
+### Key Changes in v2.1
+- ✅ **Multi-voice RVC system**: Unlimited voice profiles with dynamic discovery
+- ✅ **Voice management CLI**: List, validate, and select voices easily
+- ✅ **Configuration inheritance**: Global + voice-specific + CLI overrides
+- ✅ **Automatic voice validation**: Early error detection with helpful messages
+- ✅ **Legacy compatibility**: Old `--rvc-model` still works (deprecated)
 
-### Migration Steps
-1. **Replace engine files** with dynamic versions
-2. **Update `engine_registry.py`** with enhanced version
-3. **Create `default_config.json`** with desired parameters
-4. **Existing projects** automatically updated on first run
+### Migration Steps from v2.0
+1. **Update config structure**: Add `rvc_global` and individual `rvc_voicename` sections
+2. **Remove old RVC config**: Delete legacy `rvc` section from configs
+3. **Update function calls**: New RVC processing uses voice selection from metadata
+4. **Test voice selection**: Verify all existing voices work with new system
 
 ---
 
@@ -450,6 +644,10 @@ Each engine has optimized defaults but fully configurable:
 python AudiobookGenerator.py --init mybook
 python AudiobookGenerator.py --project mybook --input book.epub  
 python AudiobookGenerator.py --project mybook --tts-engine f5 --rvc-voice sigma_male_narrator
+
+# Voice management (NEW v2.1)
+python AudiobookGenerator.py --project mybook --list-rvc-voices
+python AudiobookGenerator.py --project mybook --rvc-voice owen_morgan --speed 1.1
 
 # Interactive features
 python AudiobookGenerator.py --project mybook --interactive-start
@@ -472,5 +670,13 @@ python AudiobookGenerator.py --project mybook --batch-name "test-run"
 - 🔍 **Dynamic detection** - Add any parameter, engine uses it automatically  
 - 📸 **Complete snapshots** - Every job's exact settings preserved
 - 🔄 **No code changes** - New features work by updating JSON only
+- 🎭 **Voice flexibility** - Unlimited RVC voices with plug-and-play setup
 
-This architecture enables rapid experimentation, precise reproducibility, and effortless optimization of audiobook generation quality.
+### RVC Voice Management (NEW v2.1)
+- 🎪 **Automatic discovery** - Add voice to config, instantly available
+- 🎯 **Smart defaults** - Falls back to sigma_male_narrator if unspecified
+- 🔍 **Validation** - Early error detection with helpful suggestions
+- 🎛️ **Inheritance** - Global settings + voice-specific + CLI overrides
+- 📋 **Easy listing** - `--list-rvc-voices` shows all available options
+
+This architecture enables rapid experimentation, precise reproducibility, and effortless optimization of audiobook generation quality with unlimited voice flexibility.

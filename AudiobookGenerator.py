@@ -69,6 +69,7 @@ Examples:
     # Config overrides
     parser.add_argument("--voice", help="Voice model")
     parser.add_argument("--rvc-model", help="RVC model name")
+    parser.add_argument("--list-rvc-voices", action="store_true", help="List available RVC voice profiles")
     parser.add_argument("--rvc-voice", help="RVC voice profile name (e.g., 'sigma_male_narrator', 'my_voice')")
     parser.add_argument("--speed", type=float, help="Speed factor")
     parser.add_argument("--bark-text-temp", type=float, help="Bark text temperature")
@@ -122,7 +123,6 @@ def create_cli_overrides(args):
     if bark:
         overrides['bark'] = bark
     
-    # Edge overrides
     edge = {}
     if args.voice and args.tts_engine == 'edge':
         edge['voice'] = args.voice
@@ -137,8 +137,7 @@ def create_cli_overrides(args):
     if edge:
         overrides['edge'] = edge
     
-    # RVC overrides - UPDATED FOR NEW MULTI-VOICE SYSTEM
-    # Handle RVC voice selection
+    # RVC voice selection (metadata override)
     if hasattr(args, 'rvc_voice') and args.rvc_voice:
         # Set the RVC voice in metadata
         if 'metadata' not in overrides:
@@ -158,6 +157,25 @@ def create_cli_overrides(args):
         rvc_global['speed_factor'] = args.speed
     if rvc_global:
         overrides['rvc_global'] = rvc_global
+    
+    # Voice-specific RVC overrides (for advanced users)
+    # This allows CLI overrides for specific voice settings
+    # Example: --rvc-semitones -3 would override n_semitones for the selected voice
+    if hasattr(args, 'rvc_voice') and args.rvc_voice:
+        voice_specific_overrides = {}
+        
+        # Add any voice-specific CLI parameters here
+        if hasattr(args, 'rvc_semitones') and args.rvc_semitones is not None:
+            voice_specific_overrides['n_semitones'] = args.rvc_semitones
+        if hasattr(args, 'rvc_index_rate') and args.rvc_index_rate is not None:
+            voice_specific_overrides['index_rate'] = args.rvc_index_rate
+        if hasattr(args, 'rvc_protect_rate') and args.rvc_protect_rate is not None:
+            voice_specific_overrides['protect_rate'] = args.rvc_protect_rate
+        
+        # Apply voice-specific overrides to the selected voice profile
+        if voice_specific_overrides and args.rvc_voice:
+            rvc_voice_key = f'rvc_{args.rvc_voice}'
+            overrides[rvc_voice_key] = voice_specific_overrides
     
     # Audio overrides
     audio = {}
@@ -309,6 +327,25 @@ def main():
     
     project_manager = ProjectManager()
     
+    if args.list_rvc_voices:
+        if not args.project:
+            parser.error("--list-rvc-voices requires --project")
+        
+        try:
+            config = project_manager.load_config(
+                project_manager.validate_project(args.project) / "config" / "config.json"
+            )
+            voices = list_available_rvc_voices(config)
+            
+            print(f"🎭 Available RVC voices for project '{args.project}':")
+            for voice_name, model_name in voices:
+                print(f"  • {voice_name} → {model_name}")
+            return 0
+            
+        except Exception as e:
+            print(f"❌ {e}")
+            return 1
+
     # Handle project creation
     if args.init:
         try:
@@ -325,6 +362,11 @@ def main():
     try:
         # Validate project exists
         project_manager.validate_project(args.project)
+        
+        # Validate RVC voice if specified
+        if hasattr(args, 'rvc_voice') and args.rvc_voice:
+            if not validate_rvc_voice(project_manager, args.project, args.rvc_voice):
+                return 1
         
         # Handle section listing
         if args.list:
@@ -458,6 +500,39 @@ def main():
     except Exception as e:
         print(f"❌ {e}")
         return 1
+    
+def list_available_rvc_voices(config):
+    """List all available RVC voice profiles"""
+    voices = []
+    for key in config.keys():
+        if key.startswith('rvc_') and key != 'rvc_global':
+            voice_name = key.replace('rvc_', '')
+            model_name = config[key].get('model', 'Unknown')
+            voices.append((voice_name, model_name))
+    return voices
+
+def validate_rvc_voice(project_manager, project_name, rvc_voice):
+    """Validate that the specified RVC voice exists"""
+    try:
+        config = project_manager.load_config(
+            project_manager.validate_project(project_name) / "config" / "config.json"
+        )
+        
+        available_voices = list_available_rvc_voices(config)
+        voice_names = [v[0] for v in available_voices]
+        
+        if rvc_voice not in voice_names:
+            print(f"❌ RVC voice '{rvc_voice}' not found!")
+            print(f"📋 Available voices:")
+            for voice_name, model_name in available_voices:
+                print(f"  • {voice_name} → {model_name}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        print(f"⚠️ Could not validate RVC voice: {e}")
+        return True  # Allow processing to continue
 
 if __name__ == "__main__":
     sys.exit(main())
