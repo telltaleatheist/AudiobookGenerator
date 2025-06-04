@@ -69,6 +69,7 @@ Examples:
     # Config overrides
     parser.add_argument("--voice", help="Voice model")
     parser.add_argument("--rvc-model", help="RVC model name")
+    parser.add_argument("--rvc-voice", help="RVC voice profile name (e.g., 'sigma_male_narrator', 'my_voice')")
     parser.add_argument("--speed", type=float, help="Speed factor")
     parser.add_argument("--bark-text-temp", type=float, help="Bark text temperature")
     parser.add_argument("--bark-waveform-temp", type=float, help="Bark waveform temperature")
@@ -136,14 +137,27 @@ def create_cli_overrides(args):
     if edge:
         overrides['edge'] = edge
     
-    # RVC overrides
-    rvc = {}
-    if args.rvc_model:
-        rvc['model'] = args.rvc_model
+    # RVC overrides - UPDATED FOR NEW MULTI-VOICE SYSTEM
+    # Handle RVC voice selection
+    if hasattr(args, 'rvc_voice') and args.rvc_voice:
+        # Set the RVC voice in metadata
+        if 'metadata' not in overrides:
+            overrides['metadata'] = {}
+        overrides['metadata']['rvc_voice'] = args.rvc_voice
+    
+    # Handle legacy --rvc-model parameter (map to rvc_voice)
+    elif hasattr(args, 'rvc_model') and args.rvc_model:
+        if 'metadata' not in overrides:
+            overrides['metadata'] = {}
+        overrides['metadata']['rvc_voice'] = args.rvc_model
+        print(f"💡 Note: --rvc-model is deprecated, use --rvc-voice instead")
+    
+    # Global RVC settings (applies to all voices)
+    rvc_global = {}
     if args.speed is not None:
-        rvc['speed_factor'] = args.speed
-    if rvc:
-        overrides['rvc'] = rvc
+        rvc_global['speed_factor'] = args.speed
+    if rvc_global:
+        overrides['rvc_global'] = rvc_global
     
     # Audio overrides
     audio = {}

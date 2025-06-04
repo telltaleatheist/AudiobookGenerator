@@ -330,11 +330,12 @@ class PipelineManager:
         try:
             from audio_processor import process_audio_through_rvc
             rvc_output_path = paths['final']
+            
+            # Call without voice_name parameter - let the function read it from config
             rvc_success = process_audio_through_rvc(
                 paths['combined'], 
                 rvc_output_path, 
-                config,
-                voice_name=rvc_voice  # Pass the voice selection
+                config
             )
 
             if rvc_success:
@@ -349,7 +350,7 @@ class PipelineManager:
         except Exception as e:
             print(f"❌ RVC Conversion failed: {e}")
             return False
-
+        
     def _run_cleanup(self, paths, config, skip_rvc):
         """Phase 5: Cleanup"""
         print("\n🧹 Phase 5: Cleanup")

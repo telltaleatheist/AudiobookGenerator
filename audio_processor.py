@@ -263,19 +263,38 @@ def find_rvc_output_file(output_dir, base_name=None):
     return None
 
 def process_audio_through_rvc(input_file, output_file, config):
-    """Process an audio file through RVC conversion with core configuration settings"""
+    """Process an audio file through RVC conversion with NEW multi-voice configuration"""
     
     input_path = Path(input_file)
     output_path = Path(output_file)
-    rvc_config = config['rvc']
+    
+    # GET RVC VOICE FROM METADATA (NEW SYSTEM)
+    rvc_voice = config.get('metadata', {}).get('rvc_voice', 'my_voice')
+    print(f"STATUS: Using RVC voice profile: {rvc_voice}", file=sys.stderr)
+    
+    # GET VOICE-SPECIFIC CONFIG
+    rvc_voice_key = f'rvc_{rvc_voice}'
+    if rvc_voice_key not in config:
+        print(f"ERROR: RVC voice config '{rvc_voice_key}' not found!", file=sys.stderr)
+        print(f"Available RVC configs: {[k for k in config.keys() if k.startswith('rvc_')]}", file=sys.stderr)
+        return False
+    
+    # COMBINE GLOBAL + VOICE-SPECIFIC SETTINGS
+    rvc_global = config.get('rvc_global', {})
+    rvc_voice_config = config[rvc_voice_key]
+    
+    # Voice-specific settings override global settings
+    rvc_config = {**rvc_global, **rvc_voice_config}
+    
+    print(f"STATUS: RVC model: {rvc_config.get('model', 'unknown')}", file=sys.stderr)
+    print(f"STATUS: RVC speed factor: {rvc_config.get('speed_factor', 1.0)}", file=sys.stderr)
     
     # Create output directory
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     print(f"STATUS: Processing {input_path.name} through RVC", file=sys.stderr)
-    print(f"STATUS: RVC model: {rvc_config['model']}", file=sys.stderr)
     
-    # Log core RVC settings being used (only the ones we're actually passing)
+    # Log core RVC settings being used
     print(f"STATUS: RVC settings:", file=sys.stderr)
     core_settings = [
         'speed_factor', 'clean_silence', 'silence_threshold', 'silence_duration',
@@ -292,7 +311,7 @@ def process_audio_through_rvc(input_file, output_file, config):
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         
-        # Run RVC conversion with core config only
+        # Run RVC conversion with combined config
         success, stdout = run_rvc_conversion(input_path, temp_path, rvc_config['model'], rvc_config)
         
         if not success:
@@ -312,14 +331,14 @@ def process_audio_through_rvc(input_file, output_file, config):
         current_source = rvc_output
         
         # Apply silence cleaning if enabled
-        if rvc_config['clean_silence']:
+        if rvc_config.get('clean_silence', False):
             print(f"STATUS: Removing long pauses", file=sys.stderr)
             temp_cleaned = temp_path / "cleaned_output.wav"
             if remove_long_silence(
                 current_source, 
                 temp_cleaned, 
-                rvc_config['silence_threshold'], 
-                rvc_config['silence_duration']
+                rvc_config.get('silence_threshold', -40), 
+                rvc_config.get('silence_duration', 0.6)
             ):
                 current_source = temp_cleaned
                 print("STATUS: Pause removal completed", file=sys.stderr)
@@ -327,14 +346,17 @@ def process_audio_through_rvc(input_file, output_file, config):
                 print("WARNING: Pause removal failed, using original RVC output", file=sys.stderr)
         
         # Speed up the audio if requested
-        if rvc_config['speed_factor'] != 1.0:
-            print(f"STATUS: Adjusting speed by {rvc_config['speed_factor']}x", file=sys.stderr)
+        speed_factor = rvc_config.get('speed_factor', 1.0)
+        if speed_factor != 1.0:
+            print(f"STATUS: Adjusting speed by {speed_factor}x", file=sys.stderr)
             temp_spedup = temp_path / "spedup_output.wav"
-            if speed_up_audio(current_source, temp_spedup, rvc_config['speed_factor']):
+            if speed_up_audio(current_source, temp_spedup, speed_factor):
                 current_source = temp_spedup
                 print("STATUS: Speed adjustment completed", file=sys.stderr)
             else:
                 print("WARNING: Speed adjustment failed, using cleaned audio", file=sys.stderr)
+        else:
+            print("STATUS: No speed adjustment needed (speed_factor = 1.0)", file=sys.stderr)
         
         # Copy final result to output location
         shutil.copy2(current_source, output_path)
@@ -355,20 +377,25 @@ def process_combined_audio(combined_file, final_file, config, skip_rvc=False):
     return process_audio_through_rvc(combined_file, final_file, config)
 
 def ensure_audio_config(config):
-    """Ensure audio config exists in the main config with core supported settings"""
-    defaults = get_audio_default_config()
+    """Ensure audio config exists - UPDATED to not add old RVC structure"""
     config_updated = False
     
-    for section, section_config in defaults.items():
-        if section not in config:
-            config[section] = section_config.copy()
-            config_updated = True
-            print(f"STATUS: Added default {section} config", file=sys.stderr)
-        else:
-            for key, value in section_config.items():
-                if key not in config[section]:
-                    config[section][key] = value
-                    config_updated = True
-                    print(f"STATUS: Added default {section}.{key}: {value}", file=sys.stderr)
+    # Only add audio section if missing (we don't add RVC anymore)
+    if 'audio' not in config:
+        config['audio'] = {'silence_gap': 0.3}
+        config_updated = True
+        print(f"STATUS: Added default audio config", file=sys.stderr)
+    else:
+        # Add missing audio settings
+        audio_defaults = {'silence_gap': 0.3}
+        for key, value in audio_defaults.items():
+            if key not in config['audio']:
+                config['audio'][key] = value
+                config_updated = True
+                print(f"STATUS: Added default audio.{key}: {value}", file=sys.stderr)
+    
+    # DON'T add old RVC config anymore - we use the new multi-voice structure
+    if config_updated:
+        print("STATUS: Audio config updated (no RVC defaults added)", file=sys.stderr)
     
     return config_updated

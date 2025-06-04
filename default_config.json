@@ -228,7 +228,7 @@
     "f0_method": "crepe",
     "hop_length": 64,
     "clean_voice": true,
-    "clean_strength": 0.5,
+    "clean_strength": 0.3,
     "autotune_voice": true
   },
   "rvc_my_voice": {
@@ -242,9 +242,9 @@
   },
   "rvc_sigma_male_narrator": {
     "model": "Sigma Male Narrator",
-    "n_semitones": -6,
-    "index_rate": 0.3,
-    "protect_rate": 0.5,
+    "n_semitones": -4,
+    "index_rate": 0.4,
+    "protect_rate": 0.4,
     "rms_mix_rate": 0.5,
     "split_voice": true,
     "autotune_strength": 0.3

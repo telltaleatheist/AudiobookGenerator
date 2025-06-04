@@ -470,24 +470,19 @@ class ProjectManager:
             print(f"🎙️ Model: {xtts['model_name']}")
             print(f"⚡ Speed: {xtts['speed']}x")
         
-        # Handle both old and new RVC config structures
-        if 'rvc' in config:
-            # Old structure
-            print(f"🎭 RVC Model: {config['rvc']['model']}")
-            print(f"⚡ Speed: {config['rvc']['speed_factor']}x")
+        rvc_voice = config.get('metadata', {}).get('rvc_voice', 'my_voice')
+        rvc_voice_key = f'rvc_{rvc_voice}'
+        
+        if rvc_voice_key in config:
+            print(f"🎭 RVC Model: {config[rvc_voice_key]['model']}")
         else:
-            # New structure - show selected voice
-            rvc_voice = config.get('metadata', {}).get('rvc_voice', 'my_voice')
-            if rvc_voice == 'my_voice' and 'rvc_my_voice' in config:
-                print(f"🎭 RVC Model: {config['rvc_my_voice']['model']}")
-            elif rvc_voice == 'sigma_male_narrator' and 'rvc_sigma_male_narrator' in config:
-                print(f"🎭 RVC Model: {config['rvc_sigma_male_narrator']['model']}")
-            else:
-                print(f"🎭 RVC Voice: {rvc_voice}")
-            
-            # Show speed from global config
-            if 'rvc_global' in config:
-                print(f"⚡ Speed: {config['rvc_global']['speed_factor']}x")
+            print(f"🎭 RVC Voice: {rvc_voice} (config not found)")
+        
+        # Show speed from global config
+        if 'rvc_global' in config:
+            print(f"⚡ Speed: {config['rvc_global']['speed_factor']}x")
+        else:
+            print(f"⚠️ RVC global config missing")
         
         if config['metadata'].get('sections'):
             sections = ', '.join(map(str, config['metadata']['sections']))
