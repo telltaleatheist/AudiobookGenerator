@@ -148,3 +148,6 @@ samples/draft 7/sample-7-missing-people.mp3
 samples/draft 7/sample-7-missing-people.txt
 samples/draft 7/sample-8-jw-chronology.mp3
 samples/draft 7/sample-8-jw-chronology.txt
+dramatic_scene.mp3
+output.mp3
+__pycache__/openai_engine.cpython-310.pyc

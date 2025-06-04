@@ -285,5 +285,11 @@ def _register_available_engines():
     except ImportError as e:
         print(f"WARNING: XTTS engine not available: {e}", file=sys.stderr)
 
+    try:
+        from openai_engine import register_openai_engine
+        register_openai_engine()
+    except ImportError as e:
+        print(f"WARNING: OpenAI engine not available: {e}", file=sys.stderr)
+        
 # Auto-register engines on import
 _register_available_engines()

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 XTTS Engine - Coqui XTTS processor with multilingual support
-UPDATED: Now uses dynamic parameter loading from engine registry
-Keeps all existing functionality while adding automatic config detection
+UPDATED: Now uses low-level model interface for full prosody control
+Bypasses high-level API limitations to access all generation parameters
 """
 
 import sys
@@ -139,8 +139,7 @@ def load_xtts_model(xtts_config):
             'config_path',
             'gpt_model_checkpoint', 
             'vocoder_checkpoint',
-            'use_deepspeed',
-            'cpu_offload'
+            'use_deepspeed'
         ]
         
         for param in advanced_init_params:
@@ -152,6 +151,7 @@ def load_xtts_model(xtts_config):
         tts = TTS(**init_params)
         
         print("STATUS: XTTS model loaded successfully", file=sys.stderr)
+        print("STATUS: Using low-level model interface for full prosody control", file=sys.stderr)
         return tts
         
     except Exception as e:
@@ -173,16 +173,145 @@ def list_xtts_speakers(tts):
         print(f"Warning: Could not list speakers: {e}", file=sys.stderr)
         return []
 
-def generate_xtts_audio_dynamic(tts, text, xtts_config):
-    """Generate audio using XTTS with comprehensive dynamic configuration support"""
+def generate_xtts_audio_lowlevel(tts, text, xtts_config):
+    """Generate audio using XTTS low-level model interface with full prosody control"""
     try:
-        # Build base generation parameters
-        base_params = {
+        # Get the underlying model for low-level access
+        model = tts.synthesizer.tts_model
+        language = xtts_config.get('language', 'en')
+        
+        print(f"STATUS: Using low-level XTTS model interface", file=sys.stderr)
+        print(f"STATUS: Text length: {len(text)} characters", file=sys.stderr)
+        
+        # Handle speaker configuration
+        speaker_wav = xtts_config.get('speaker_wav')
+        if not speaker_wav:
+            print("ERROR: speaker_wav required for low-level interface", file=sys.stderr)
+            return None, None
+        
+        if isinstance(speaker_wav, list):
+            print(f"STATUS: Using {len(speaker_wav)} reference samples for conditioning", file=sys.stderr)
+            # Use first sample as primary, others as additional conditioning
+            primary_speaker_wav = speaker_wav[0]
+            additional_samples = speaker_wav[1:] if len(speaker_wav) > 1 else []
+        else:
+            print(f"STATUS: Using single reference sample: {Path(speaker_wav).name}", file=sys.stderr)
+            primary_speaker_wav = speaker_wav
+            additional_samples = []
+        
+        # Get conditioning latents with dynamic parameters
+        gpt_cond_len = xtts_config.get('gpt_cond_len', 30)
+        gpt_cond_chunk_len = xtts_config.get('gpt_cond_chunk_len', 4)
+        max_ref_len = xtts_config.get('max_ref_len', 60)
+        sound_norm_refs = xtts_config.get('sound_norm_refs', True)
+        
+        print(f"STATUS: Computing conditioning latents (gpt_cond_len={gpt_cond_len}, max_ref_len={max_ref_len})", file=sys.stderr)
+        
+        # Build reference audio list
+        ref_audio_paths = [primary_speaker_wav] + additional_samples
+        
+        # Get conditioning latents from the model
+        gpt_cond_latent, speaker_embedding = model.get_conditioning_latents(
+            audio_path=ref_audio_paths,
+            gpt_cond_len=gpt_cond_len,
+            gpt_cond_chunk_len=gpt_cond_chunk_len,
+            max_ref_length=max_ref_len,
+            sound_norm_refs=sound_norm_refs
+        )
+        
+        # Build generation parameters with full prosody control
+        generation_params = {
             'text': text,
-            'language': xtts_config.get('language', 'en'),
-            'speed': xtts_config.get('speed', 1.0)
+            'language': language,
+            'gpt_cond_latent': gpt_cond_latent,
+            'speaker_embedding': speaker_embedding,
         }
         
+        # Add prosody parameters if present in config
+        prosody_params = {
+            'temperature': 0.75,
+            'length_penalty': 1.0,
+            'repetition_penalty': 10.0,
+            'top_k': 50,
+            'top_p': 0.85,
+            'do_sample': True,
+            'num_beams': 1,
+            'speed': 1.0,
+            'enable_text_splitting': False
+        }
+        
+        # Override with config values
+        for param in prosody_params:
+            if param in xtts_config:
+                prosody_params[param] = xtts_config[param]
+        
+        # Add all prosody parameters to generation
+        generation_params.update(prosody_params)
+        
+        # Show active prosody settings
+        active_prosody = {k: v for k, v in prosody_params.items() if k in xtts_config}
+        if active_prosody:
+            print(f"STATUS: Active prosody settings: {active_prosody}", file=sys.stderr)
+        else:
+            print(f"STATUS: Using default prosody settings", file=sys.stderr)
+        
+        # Generate audio using low-level model interface
+        print(f"STATUS: Generating audio with full prosody control...", file=sys.stderr)
+        
+        # Use the model's inference method directly
+        result = model.inference(**generation_params)
+        
+        # Handle different return formats from low-level model
+        if isinstance(result, dict):
+            # Model returned a dictionary - extract audio data
+            if 'wav' in result:
+                wav = result['wav']
+            elif 'audio' in result:
+                wav = result['audio']
+            else:
+                # Try to find audio data in the dict
+                print(f"STATUS: Model returned dict with keys: {list(result.keys())}", file=sys.stderr)
+                # Take the first tensor/array value
+                for key, value in result.items():
+                    if isinstance(value, (torch.Tensor, list)) and hasattr(value, '__len__'):
+                        wav = value
+                        print(f"STATUS: Using '{key}' as audio data", file=sys.stderr)
+                        break
+                else:
+                    print(f"ERROR: Could not find audio data in model output", file=sys.stderr)
+                    return None, None
+        else:
+            # Model returned raw audio data
+            wav = result
+        
+        # Get sample rate from synthesizer
+        sample_rate = tts.synthesizer.output_sample_rate
+        
+        print(f"STATUS: Audio generated successfully (format: {type(wav)})", file=sys.stderr)
+        return wav, sample_rate
+        
+    except Exception as e:
+        print(f"ERROR: Low-level XTTS generation failed: {e}", file=sys.stderr)
+        print(f"ERROR: This might be due to version incompatibility. Falling back to high-level API.", file=sys.stderr)
+        
+        # Fallback to high-level API
+        return generate_xtts_audio_highlevel(tts, text, xtts_config)
+
+def generate_xtts_audio_highlevel(tts, text, xtts_config):
+    """Fallback: Generate audio using high-level API (limited prosody control)"""
+    try:
+        print(f"STATUS: Using high-level XTTS API (limited prosody control)", file=sys.stderr)
+        
+        # Build base generation parameters for high-level API
+        base_params = {
+            'text': text,
+            'language': xtts_config.get('language', 'en')
+        }
+
+        # Only add speed if it's actually in the config
+        if 'speed' in xtts_config:
+            base_params['speed'] = xtts_config['speed']
+
         # Add speaker configuration
         speaker_wav = xtts_config.get('speaker_wav')
         if speaker_wav:
@@ -213,9 +342,7 @@ def generate_xtts_audio_dynamic(tts, text, xtts_config):
         return wav, tts.synthesizer.output_sample_rate
         
     except Exception as e:
-        print(f"ERROR: XTTS generation failed: {e}", file=sys.stderr)
-        if not xtts_config.get('speaker_wav') and not xtts_config.get('speaker'):
-            print("💡 Add voice samples to project/samples/ for voice cloning, or use --xtts-speaker for built-in voices", file=sys.stderr)
+        print(f"ERROR: High-level XTTS generation failed: {e}", file=sys.stderr)
         return None, None
 
 def save_xtts_audio(audio_data, sample_rate, output_path):
@@ -267,8 +394,8 @@ def process_xtts_chunks_with_retry(tts, chunks, output_dir, xtts_config):
             try:
                 start_time = time.time()
                 
-                # Generate audio with dynamic config support
-                audio_data, sample_rate = generate_xtts_audio_dynamic(tts, chunk_text, xtts_config)
+                # Generate audio with low-level interface first, fallback to high-level
+                audio_data, sample_rate = generate_xtts_audio_lowlevel(tts, chunk_text, xtts_config)
                 
                 if audio_data is None:
                     if attempt < retry_attempts - 1:
@@ -320,24 +447,23 @@ def process_xtts_text_file(text_file, output_dir, config, paths):
     # Extract ALL XTTS config parameters dynamically using registry utilities
     xtts_config = extract_engine_config(config, 'xtts', verbose=True)
     
-    print(f"STATUS: Starting XTTS processing (dynamic mode)", file=sys.stderr)
+    print(f"STATUS: Starting XTTS processing (low-level mode)", file=sys.stderr)
     print(f"STATUS: Model: {xtts_config.get('model_name', 'tts_models/multilingual/multi-dataset/xtts_v2')}", file=sys.stderr)
     print(f"STATUS: Language: {xtts_config.get('language', 'en')}", file=sys.stderr)
-    print(f"STATUS: Speed: {xtts_config.get('speed', 1.0)}x", file=sys.stderr)
+    if 'speed' in xtts_config:
+        print(f"STATUS: Speed: {xtts_config['speed']}x", file=sys.stderr)
     
-    # Display configured advanced parameters
-    advanced_features = []
-    if xtts_config.get('style'):
-        advanced_features.append(f"style={xtts_config['style']}")
-    if xtts_config.get('emotion'):
-        advanced_features.append(f"emotion={xtts_config['emotion']}")
-    if xtts_config.get('streaming'):
-        advanced_features.append("streaming")
-    if xtts_config.get('use_deepspeed'):
-        advanced_features.append("deepspeed")
+    # Display prosody parameters
+    prosody_params = ['temperature', 'length_penalty', 'repetition_penalty', 'top_k', 'top_p', 'do_sample']
+    active_prosody = {k: xtts_config[k] for k in prosody_params if k in xtts_config}
+    if active_prosody:
+        print(f"STATUS: Prosody settings: {active_prosody}", file=sys.stderr)
     
-    if advanced_features:
-        print(f"STATUS: Advanced features: {', '.join(advanced_features)}", file=sys.stderr)
+    # Display conditioning parameters
+    conditioning_params = ['gpt_cond_len', 'gpt_cond_chunk_len', 'max_ref_len', 'sound_norm_refs']
+    active_conditioning = {k: xtts_config[k] for k in conditioning_params if k in xtts_config}
+    if active_conditioning:
+        print(f"STATUS: Conditioning settings: {active_conditioning}", file=sys.stderr)
     
     # Check for voice samples
     speaker_wav = xtts_config.get('speaker_wav')

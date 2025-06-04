@@ -2,7 +2,7 @@
 """
 AudiobookGenerator - Clean project-based audiobook generation
 Simple, focused command-line interface for audiobook processing
-Updated with hierarchical PDF chapter support
+Updated with hierarchical PDF chapter support and universal --engine-voice parameter
 """
 
 import sys
@@ -41,6 +41,11 @@ Examples:
   
   # List chapters/sections/pages
   python AudiobookGenerator.py --project mybook --list
+  
+  # Use specific voices for any engine
+  python AudiobookGenerator.py --project mybook --tts-engine edge --engine-voice en-US-JennyNeural
+  python AudiobookGenerator.py --project mybook --tts-engine bark --engine-voice v2/en_speaker_6
+  python AudiobookGenerator.py --project mybook --tts-engine openai --engine-voice nova
         """
     )
     
@@ -51,7 +56,7 @@ Examples:
     parser.add_argument("--config", help="Use specific config file")
     
     # TTS engine
-    parser.add_argument("--tts-engine", choices=['bark', 'edge', 'f5', 'xtts'], default='bark',
+    parser.add_argument("--tts-engine", choices=['bark', 'edge', 'f5', 'xtts', 'openai'], default='bark',
                        help="TTS engine (default: bark)")
     
     # Processing options
@@ -67,7 +72,8 @@ Examples:
                        help="Interactive start point selection (hierarchical for PDFs)")
     
     # Config overrides
-    parser.add_argument("--voice", help="Voice model")
+    parser.add_argument("--voice", help="Voice model (deprecated, use --engine-voice)")
+    parser.add_argument("--engine-voice", help="Voice model for any TTS engine (e.g., nova, en-US-JennyNeural, v2/en_speaker_6)")
     parser.add_argument("--rvc-model", help="RVC model name")
     parser.add_argument("--list-rvc-voices", action="store_true", help="List available RVC voice profiles")
     parser.add_argument("--rvc-voice", help="RVC voice profile name (e.g., 'sigma_male_narrator', 'my_voice')")
@@ -112,20 +118,53 @@ def create_cli_overrides(args):
     """Convert CLI args to config overrides"""
     overrides = {}
     
-    # Bark overrides
-    bark = {}
+    # Handle voice selection with new --engine-voice parameter
+    voice_to_use = None
+    if args.engine_voice:
+        voice_to_use = args.engine_voice
+        print(f"🎙️ Using engine voice: {voice_to_use}")
+    elif args.voice:
+        voice_to_use = args.voice
+        print(f"⚠️ --voice is deprecated, use --engine-voice instead")
+        print(f"🎙️ Using engine voice: {voice_to_use}")
+    
+    # Apply voice to the selected TTS engine
+    if voice_to_use:
+        engine = args.tts_engine
+        print(f"🎛️ Applying voice '{voice_to_use}' to {engine.upper()} engine")
+        
+        # Apply to the specific engine (let the engine validate compatibility)
+        if engine == 'bark':
+            overrides['bark'] = overrides.get('bark', {})
+            overrides['bark']['voice'] = voice_to_use
+        elif engine == 'edge':
+            overrides['edge'] = overrides.get('edge', {})
+            overrides['edge']['voice'] = voice_to_use
+        elif engine == 'openai':
+            overrides['openai'] = overrides.get('openai', {})
+            overrides['openai']['voice'] = voice_to_use
+        elif engine == 'xtts':
+            # XTTS uses 'speaker' for built-in voices
+            overrides['xtts'] = overrides.get('xtts', {})
+            overrides['xtts']['speaker'] = voice_to_use
+        elif engine == 'f5':
+            print(f"💡 F5-TTS uses voice cloning from samples/ directory, ignoring --engine-voice")
+        else:
+            print(f"⚠️ Unknown engine '{engine}', applying voice parameter anyway")
+            overrides[engine] = overrides.get(engine, {})
+            overrides[engine]['voice'] = voice_to_use
+    
+    # Bark-specific overrides
+    bark = overrides.get('bark', {})
     if args.bark_text_temp is not None:
         bark['text_temp'] = args.bark_text_temp
     if args.bark_waveform_temp is not None:
         bark['waveform_temp'] = args.bark_waveform_temp
-    if args.voice and args.tts_engine == 'bark':
-        bark['voice'] = args.voice
     if bark:
         overrides['bark'] = bark
     
-    edge = {}
-    if args.voice and args.tts_engine == 'edge':
-        edge['voice'] = args.voice
+    # Edge-specific overrides
+    edge = overrides.get('edge', {})
     if args.edge_rate:
         edge['rate'] = args.edge_rate
     if args.edge_pitch:
