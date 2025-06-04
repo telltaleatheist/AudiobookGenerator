@@ -225,7 +225,7 @@
     "autotune_strength": 0.3
   },
   "audio": {
-    "silence_gap": 0.5
+    "silence_gap": 0.6
   },
   "pipeline": {
     "cleanup_temp_files": true,
