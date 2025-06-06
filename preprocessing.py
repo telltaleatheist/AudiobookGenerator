@@ -668,8 +668,27 @@ def extract_text(file_path, sections=None):
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
 
-def apply_phonetic_pronunciation_fixes(text):
-    """Apply phonetic spelling fixes for non-SSML engines (Bark, F5, XTTS, EdgeTTS)"""
+def is_xtts_engine(config):
+    """Check if the TTS engine is XTTS (case-insensitive)"""
+    xtts_identifiers = ['xtts', 'xtts2', 'xtts_v2', 'coqui_xtts', 'coqui-xtts']
+
+    # Check in "tts" block
+    engine = config.get('tts', {}).get('engine', '').lower()
+    if engine in xtts_identifiers:
+        return True
+
+    # Also check in "metadata" block
+    engine_meta = config.get('metadata', {}).get('tts_engine', '').lower()
+    return engine_meta in xtts_identifiers
+
+def apply_phonetic_pronunciation_fixes(text, config=None):
+    """Apply phonetic spelling fixes for non-SSML engines (Bark, F5, EdgeTTS) - Skip for XTTS"""
+    
+    # Skip phonetic fixes if using XTTS
+    if config and is_xtts_engine(config):
+        print("STATUS: Skipping phonetic pronunciation fixes for XTTS engine", file=sys.stderr)
+        return text
+    
     print("STATUS: Applying phonetic pronunciation fixes...", file=sys.stderr)
     
     pronunciation_fixes = {
@@ -748,7 +767,8 @@ def clean_text_basic(text):
     text = text.replace('"', '"').replace('"', '"').replace('"', '"')
     text = text.replace(''', "'").replace(''', "'")
     text = text.replace('—', ' -- ').replace('–', ' -- ').replace(' - ', ' -- ')
-    
+    text = text.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
+
     # Common abbreviation fixes
     abbreviations = {
         "e.g.": "for example",
@@ -815,7 +835,7 @@ def preprocess_file(input_file, output_file, config, sections=None):
     cleaned_text = clean_text_basic(text)
     
     # Apply phonetic pronunciation fixes for all engines
-    cleaned_text = apply_phonetic_pronunciation_fixes(cleaned_text)
+    cleaned_text = apply_phonetic_pronunciation_fixes(cleaned_text, config)
     
     # Save cleaned text
     save_clean_text(cleaned_text, output_file)
