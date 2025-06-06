@@ -1,389 +1,261 @@
 # AudiobookGenerator
-A comprehensive text-to-speech audiobook generation system supporting multiple TTS engines, voice cloning, and advanced audio processing.
 
-## Features
-Multiple TTS Engines: Bark, EdgeTTS, F5-TTS, XTTS v2
-Voice Cloning: RVC (Retrieval-based Voice Conversion) support
-Project Management: Organized project structure with batch processing
-Interactive Start Points: Hierarchical chapter/page/word selection for PDFs
-Multiple File Formats: EPUB, PDF, TXT support
-Advanced Audio Processing: Automatic silence removal, speed adjustment, voice enhancement
-## Quick Start
-bash
-# Create a new project
+A professional-grade audiobook generation system that converts text documents (EPUB, PDF, TXT) into high-quality audiobooks using multiple TTS engines and advanced voice conversion technology.
+
+---
+
+## 🌟 [Key Features](#key-features)
+
+- **Multiple TTS Engines**: XTTS, OpenAI TTS, F5-TTS, EdgeTTS, and Bark
+- **Professional Voice Conversion**: URVC (Ultimate RVC) post-processing for studio-quality output
+- **Voice Cloning**: Create audiobooks with custom voices using reference audio
+- **Multi-Format Support**: EPUB, PDF, and TXT files
+- **Smart Text Processing**: Universal phrase-aware chunking preserves technical terms
+- **Project Management**: Organized workflow with batch processing and configuration snapshots
+
+---
+
+## 🏆 [TTS Engine Quality Rankings](#tts-engine-quality-rankings)
+
+- ⭐⭐⭐⭐⭐ XTTS (Coqui) - Best local model with voice cloning
+- ⭐⭐⭐⭐ OpenAI TTS - Premium cloud service with excellent quality
+- ⭐⭐⭐ F5-TTS - Good local voice cloning with fast processing
+- ⭐⭐ EdgeTTS (Microsoft) - Free cloud service with decent quality
+- ⭐ Bark - Fair quality, experimental use only
+
+💡 **Pro Tip**: Use XTTS + URVC post-processing for the best audiobook quality!
+
+---
+
+## 🚀 [Quick Start](#quick-start)
+
+```bash
+# 1. Setup and create project
+python config_manager.py --create-default
 python AudiobookGenerator.py --init mybook
 
-# Add source file
+# 2. Add your book
 python AudiobookGenerator.py --project mybook --input book.epub
 
-# Generate audiobook with Bark
-python AudiobookGenerator.py --project mybook --tts-engine bark
+# 3. Generate audiobook (recommended setup)
+python AudiobookGenerator.py --project mybook --tts-engine xtts --rvc-voice sigma_male_narrator
+```
 
-# Process specific chapters/sections
-python AudiobookGenerator.py --project mybook --chapters 1 2 3
+---
 
-# Interactive start point selection
-python AudiobookGenerator.py --project mybook --interactive-start
-## Tested Environment Versions
-This project has been tested with the following versions:
+## 📋 [Prerequisites](#prerequisites)
 
-## Core Dependencies
-Python: 3.10+
-PyTorch: 2.2.1+cu121
-NumPy: 1.22.0
-SciPy: 1.11.4
-LibROSA: 0.10.0
-SoundFile: 0.12.1
-CUDA: 12.6 (Driver 560.94)
-## TTS Engine Versions
-edge-tts: 7.0.2
-f5-tts: 1.1.5
-TTS (XTTS): 0.22.0
-bark: (No version info - install from git)
-## Check Your Installation
-bash
-# Quick version verification
-python -c "
-import sys, torch, numpy, scipy, librosa, soundfile, TTS
-print('Python:', sys.version.split()[0])
-print('PyTorch:', torch.__version__)
-print('NumPy:', numpy.__version__)
-print('SciPy:', scipy.__version__)
-print('LibROSA:', librosa.__version__)
-print('SoundFile:', soundfile.__version__)
-print('TTS/XTTS:', TTS.__version__)
-print('CUDA Available:', torch.cuda.is_available())
-"
+- Python 3.10+ with PyTorch
+- CUDA GPU (8GB+ VRAM recommended for best performance)
+- FFmpeg for audio processing
+- URVC for professional voice conversion
 
-# Check TTS engine versions
-pip show edge-tts f5-tts TTS
-## Installation Guide
-1. Install Anaconda
-## Windows
-Download Anaconda from anaconda.com
-Run the installer as administrator
-Choose "Add Anaconda to PATH" during installation
-Restart your command prompt/PowerShell
-Verify installation: conda --version
-## macOS
-Download Anaconda from anaconda.com
-Open the downloaded .pkg file
-Follow the installation wizard
-Restart Terminal
-Verify installation: conda --version
-2. Why Use Conda Environments?
-Environments are crucial for AI projects because:
+---
 
-Dependency Isolation: Different models require different package versions
-Conflict Prevention: Avoid version conflicts between projects
-Easy Switching: Switch between different model setups instantly
-Reproducibility: Share exact environment configurations
-System Protection: Keep your base Python installation clean
-Without environments, you'll encounter:
+## 🔧 [Installation](#installation)
 
-Package version conflicts
-Broken installations
-Difficult debugging
-System-wide package pollution
-3. Setting Up AI Environments
-## Create Base Environment
-bash
-# Create environment with Python 3.10 (recommended for AI models)
-conda create -n audiobook-ai python=3.10 -y
-conda activate audiobook-ai
+### Core Dependencies
 
-# Install common dependencies
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip install numpy scipy librosa soundfile
-## Create Specialized Environments
-bash
-# For Bark TTS
-conda create -n bark python=3.10 -y
-conda activate bark
-pip install git+https://github.com/suno-ai/bark.git
+```bash
+# Install PyTorch with CUDA support
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# For RVC
-conda create -n rvc python=3.10 -y
-conda activate rvc
-pip install ultimate-rvc
+# Install AudiobookGenerator dependencies
+pip install pathlib datetime json scipy beautifulsoup4 ebooklib pymupdf
 
-# For F5-TTS
-conda create -n f5 python=3.10 -y
-conda activate f5
+# Install FFmpeg (varies by OS - see development.md for details)
+```
+
+### TTS Engines (Install as needed)
+
+```bash
+# XTTS (recommended)
+pip install TTS
+
+# F5-TTS
 pip install f5-tts
-## Model Installation
-## Core AudiobookGenerator Dependencies
-bash
-conda activate audiobook-ai
 
-# Install PyTorch with CUDA support (tested versions)
-pip install torch==2.2.1+cu121 torchaudio==2.2.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+# EdgeTTS (free)
+pip install edge-tts
 
-# Core audio processing
-pip install numpy==1.22.0 scipy==1.11.4
-pip install librosa==0.10.0 soundfile==0.12.1
+# OpenAI TTS
+pip install openai
+export OPENAI_API_KEY="your-api-key-here"
 
-# Document processing
-pip install ebooklib beautifulsoup4  # EPUB support
-pip install pymupdf                   # PDF support
+# Bark (experimental)
+pip install bark-tts
+```
 
-# Or install all at once from requirements
-pip install -r requirements.txt
-## 1. Ultimate RVC
-bash
-conda activate rvc
-pip install ultimate-rvc
+### URVC Voice Conversion (Essential for Quality)
+
+```bash
+pip install urvc
 
 # Verify installation
 urvc --help
-urvc-web  # Launch web interface
-RVC Model Setup:
+```
 
-Place your trained RVC models in the appropriate directory
-Models should include .pth and .index files
-Use urvc-web for easy model management
-## 2. Bark TTS
-bash
-conda activate bark
-pip install git+https://github.com/suno-ai/bark.git
+---
 
-# Install matching dependencies from your working environment
-pip install torch==2.2.1+cu121 torchaudio==2.2.1+cu121 --index-url https://download.pytorch.org/whl/cu121
-pip install numpy==1.22.0 scipy==1.11.4
+## 🎯 [Recommended Workflow](#recommended-workflow)
 
-# Verify installation (Note: Bark doesn't report version info)
-python -c "from bark import generate_audio, SAMPLE_RATE; print('Bark installed successfully')"
-Bark Features:
+- Start with **XTTS + Default Voice**: Best quality out of the box
+- Test with **Short Content**: Fine-tune settings before full processing
+- Use **Configuration Snapshots**: Compare results and optimize
+- Train **Custom RVC Models**: For personalized voices (optional)
 
-High-quality neural TTS
-Multiple speaker voices (v2/en_speaker_0 to v2/en_speaker_9)
-Supports emotional and expressive speech
-## 3. XTTS v2
-bash
-conda activate audiobook-ai
-pip install TTS==0.22.0
+---
 
-# Install compatible PyTorch
-pip install torch==2.2.1+cu121 torchaudio==2.2.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+## 📁 [Project Structure](#project-structure)
 
-# Verify installation
-python -c "from TTS.api import TTS; print('XTTS v0.22.0 installed successfully')"
-XTTS Features:
-
-Multilingual support
-Voice cloning with short audio samples
-Real-time voice conversion
-## 4. EdgeTTS (Microsoft)
-bash
-conda activate audiobook-ai
-pip install edge-tts==7.0.2
-
-# List available voices
-edge-tts --list-voices | grep "en-US"
-
-# Verify installation
-python -c "import edge_tts; print('EdgeTTS installed successfully')"
-EdgeTTS Features:
-
-High-quality Microsoft voices
-Fast processing
-No GPU required
-Free to use
-## 5. F5-TTS
-bash
-conda activate f5
-pip install f5-tts==1.1.5
-
-# Install compatible PyTorch version
-pip install torch==2.2.1+cu121 torchaudio==2.2.1+cu121 --index-url https://download.pytorch.org/whl/cu121
-
-# Verify installation
-python -c "from f5_tts.api import F5TTS; print('F5-TTS v1.1.5 installed successfully')"
-F5-TTS Features:
-
-State-of-the-art quality
-Voice cloning capabilities
-Flow-matching based architecture
-## 6. Engine Registry System
-Your AudiobookGenerator uses a modular engine registry system that automatically detects and registers available TTS engines. The engines are loaded dynamically, so you only need to install the ones you plan to use.
-
-## Essential Tools & Dependencies
-## FFmpeg (Required for Audio Processing)
-AudiobookGenerator uses FFmpeg for:
-
-Combining audio chunks with silence gaps
-Speed adjustment (atempo filter)
-Audio format conversion
-Silence removal processing
-## Windows Installation:
-
-Download FFmpeg from ffmpeg.org
-Choose "Windows builds" → "Windows builds by BtbN"
-Download the latest release (ffmpeg-master-latest-win64-gpl.zip)
-Extract to C:\ffmpeg
-Add C:\ffmpeg\bin to your system PATH:
-Press Win+R, type sysdm.cpl
-Advanced → Environment Variables
-Under System Variables, find "Path" → Edit
-Add C:\ffmpeg\bin
-Click OK and restart command prompt
-Verify: ffmpeg -version
-## macOS Installation:
-
-bash
-# Using Homebrew (recommended)
-brew install ffmpeg
-
-# Verify installation
-ffmpeg -version
-## Linux Installation:
-
-bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install ffmpeg
-
-# CentOS/RHEL
-sudo yum install ffmpeg
-## Audio Processing Tools
-bash
-# Core audio processing (used by your audio_processor.py)
-pip install scipy soundfile
-
-# For more advanced audio operations
-pip install librosa pydub
-
-# For vocal separation with RVC (optional)
-pip install spleeter
-## PDF Processing
-bash
-# For PDF text extraction
-pip install pymupdf
-
-# Alternative PDF library
-pip install pypdf2
-## EPUB Processing
-bash
-# For EPUB file support
-pip install ebooklib beautifulsoup4
-## Project Structure
+```
 output/
 ├── project_name/
 │   ├── source/           # Input files (.epub, .pdf, .txt)
-│   ├── samples/          # Voice reference samples
-│   ├── config/           # Configuration files
-│   └── jobs/             # Processing outputs
+│   ├── samples/          # Voice reference audio for cloning
+│   ├── config/           # Project configuration
+│   └── jobs/             # Processing outputs with config snapshots
 │       └── batch_name/
-│           ├── temp_files/
-│           ├── combined.wav
-│           └── final.wav
-## Usage Examples
-## Basic Workflow
-bash
-# 1. Create project
-python AudiobookGenerator.py --init "my-audiobook"
+│           ├── config.json         # Complete settings snapshot
+│           ├── config_summary.txt  # Human-readable summary
+│           ├── batch_name_tts.wav  # TTS output
+│           └── batch_name_rvc.wav  # Final RVC processed audio
+```
 
-# 2. Add source file
-python AudiobookGenerator.py --project "my-audiobook" --input "book.epub"
+---
 
-# 3. Add voice samples (for F5/XTTS)
-# Place .wav files in output/my-audiobook/samples/
+## 🎛️ [Advanced Features](#advanced-features)
 
-# 4. Generate with preferred engine
-python AudiobookGenerator.py --project "my-audiobook" --tts-engine f5
-## Advanced Options
-bash
-# Custom batch name
-python AudiobookGenerator.py --project mybook --batch-name "chapter-1" --chapters 1
+### Multi-Voice RVC System
 
-# Skip RVC processing
-python AudiobookGenerator.py --project mybook --skip-rvc
+```bash
+# List available voices
+python AudiobookGenerator.py --project mybook --list-rvc-voices
 
-# Interactive start point
+# Use specific voice with speed adjustment
+python AudiobookGenerator.py --project mybook --rvc-voice custom_voice --speed 1.1
+```
+
+### Interactive Processing
+
+```bash
+# Choose exact start point in PDFs
 python AudiobookGenerator.py --project mybook --interactive-start
 
-# Voice overrides
-python AudiobookGenerator.py --project mybook --voice "en-US-AriaNeural" --rvc-model "my_voice"
-## RVC Voice Conversion
-bash
-# Convert existing audio to your voice
-urvc generate convert-voice "input.wav" "output_dir" "model_name" \
-  --n-semitones -2 \
-  --index-rate 1.0 \
-  --protect-rate 0.4 \
-  --rms-mix-rate 0.1 \
-  --f0-method crepe \
-  --clean-voice \
-  --clean-strength 0.7 \
-  --autotune-voice \
-  --autotune-strength 0.4
+# Process specific sections
+python AudiobookGenerator.py --project mybook --sections 1 2 3
+```
 
-  best settings: urvc generate convert-voice "C:\Users\tellt\OneDrive\Documents\tts\Audiobook Generator\output\eisenhauer\jobs\complete\Eisenhauer, Jay. ARC Genesis. 2025.wav" "C:\Users\tellt\OneDrive\Documents\tts\Audiobook Generator\output\eisenhauer\jobs\complete" my_voice --n-semitones -2 --index-rate 1.0 --protect-rate 0.4 --rms-mix-rate 0.1 --f0-method crepe --clean-voice --clean-strength 0.7 --hop-length 64 --split-voice --autotune-voice --autotune-strength 0.4
+### Voice Cloning Setup
 
-## Configuration
-The system uses JSON configuration files with engine-specific settings:
+```
+project/samples/
+├── my_voice.wav           # Reference audio (10+ seconds recommended)
+├── my_voice.txt           # Optional transcript for F5-TTS
+└── speaker2.wav           # Multiple samples supported by XTTS
+```
 
-json
+---
+
+## ⚙️ [Configuration System](#configuration-system)
+
+AudiobookGenerator v2.2 features a centralized configuration manager with no hardcoded defaults:
+
+```bash
+# Create/update configurations
+python config_manager.py --create-default
+python config_manager.py --copy-to-project mybook
+python config_manager.py --validate output/mybook/config/config.json
+```
+
+All settings are externally controlled via JSON files, ensuring reproducible results and easy optimization.
+
+---
+
+## 🎵 [Audio Quality Optimization](#audio-quality-optimization)
+
+### Recommended XTTS Settings
+
+```json
 {
-  "tts_engine": "f5",
-  "f5": {
-    "model_name": "F5TTS_Base",
-    "ref_audio": "path/to/sample.wav",
-    "speed": 1.0
-  },
-  "rvc": {
-    "model": "my_voice",
-    "speed_factor": 1.0,
-    "clean_silence": true
+  "xtts": {
+    "temperature": 0.5,
+    "repetition_penalty": 7.0,
+    "top_k": 15,
+    "top_p": 0.6,
+    "chunk_max_chars": 249
   }
 }
-## Troubleshooting
-## Common Issues
-## GPU Memory Errors:
+```
 
-bash
-# Monitor GPU usage
-nvidia-smi -l 1
+### Recommended RVC Settings
 
-# Reduce batch sizes in config files
-# Use CPU fallback for some engines
-## Environment Conflicts:
+```json
+{
+  "rvc_sigma_male_narrator": {
+    "model": "Sigma Male Narrator",
+    "n_semitones": -4,
+    "f0_method": "crepe",
+    "index_rate": 0.4,
+    "protect_rate": 0.4,
+    "clean_voice": true,
+    "clean_strength": 0.3
+  }
+}
+```
 
-bash
-# Always activate correct environment
-conda activate audiobook-ai
+---
 
-# Check active environment
-conda info --envs
+## 📖 [Documentation](#documentation)
 
-# Verify versions match tested configuration
-python -c "import torch; print('PyTorch:', torch.__version__)"
-python -c "import numpy; print('NumPy:', numpy.__version__)"
-## Module Not Found:
+- **Complete Development Guide** - In-depth technical documentation
+- **Engine Comparison** - Detailed TTS engine analysis
+- **Configuration Reference** - All available parameters
+- **Voice Training Guide** - Create custom RVC models
+- **Troubleshooting** - Common issues and solutions
 
-bash
-# Ensure you're in the right environment
-conda activate <environment_name>
+---
 
-# Reinstall missing packages
-pip install <package_name>
-## Performance Tips
-Use WAV files for best RVC quality
-Separate environments for each TTS engine
-Monitor GPU memory when processing long texts
-Use batch processing for multiple chapters
-Clean temp files between large projects
-## Contributing
-Fork the repository
-Create a feature branch
-Make your changes
-Test with different TTS engines
-Submit a pull request
-## License
+## 🔧 [Tested Environment](#tested-environment)
+
+- Python: 3.10+
+- PyTorch: 2.2.1+cu121
+- CUDA: 12.6 (Driver 560.94)
+- TTS (XTTS): 0.22.0
+- F5-TTS: 1.1.5
+- EdgeTTS: 7.0.2
+
+---
+
+## 💡 [Why AudiobookGenerator?](#why-audiobookgenerator)
+
+- **Professional Quality**: URVC post-processing transforms raw TTS into studio-quality speech
+- **Flexible Pipeline**: Mix and match TTS engines with voice conversion models
+- **Reproducible Results**: Complete configuration snapshots for every generation
+- **No Vendor Lock-in**: Works with local models - no cloud dependencies required
+- **Voice Consistency**: Universal phrase-aware chunking prevents audio artifacts
+
+---
+
+## 🤝 [Contributing](#contributing)
+
+- Fork the repository
+- Create a feature branch
+- Test with multiple TTS engines
+- Submit a pull request
+
+---
+
+## 📄 [License](#license)
+
 [Your License Here]
 
-## Support
-Issues: Submit GitHub issues for bugs
-Discussions: Use GitHub discussions for questions
-Documentation: Check the wiki for detailed guides
-Note: This project requires significant computational resources. A modern GPU with 8GB+ VRAM is recommended for optimal performance.
+---
+
+## 🆘 [Support](#support)
+
+- **Issues**: Submit GitHub issues for bugs
+- **Documentation**: Check `development.md` for comprehensive guides
+- **Discussions**: Use GitHub discussions for questions
+
+> ⚡ **Performance Note**: A modern GPU with 8GB+ VRAM is recommended for optimal performance with local TTS models.
