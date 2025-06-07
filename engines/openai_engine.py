@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 OpenAI Engine - OpenAI TTS processor with voice selection and quality control
-UPDATED: Uses new section-based architecture with dynamic parameter loading
+UPDATED: Uses new section-based architecture with dynamic parameter loading and progress bar
 """
 
 import sys
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 # Import dynamic utilities from engine registry
+from core.progress_display_manager import log_status
 from engines.base_engine import (
     extract_engine_config, 
     filter_params_for_function,
@@ -123,9 +124,6 @@ def setup_openai_client(openai_config):
 def generate_openai_audio_dynamic(client, text, openai_config):
     """Generate audio using OpenAI TTS with dynamic configuration support"""
     try:
-        print(f"STATUS: Generating audio with OpenAI TTS", file=sys.stderr)
-        print(f"STATUS: Text length: {len(text)} characters", file=sys.stderr)
-        
         # Build generation parameters
         generation_params = {
             'model': openai_config.get('model', 'tts-1'),
@@ -139,11 +137,6 @@ def generate_openai_audio_dynamic(client, text, openai_config):
         
         if 'response_format' in openai_config and openai_config['response_format'] is not None:
             generation_params['response_format'] = openai_config['response_format']
-        
-        print(f"STATUS: Model: {generation_params['model']}", file=sys.stderr)
-        print(f"STATUS: Voice: {generation_params['voice']}", file=sys.stderr)
-        if 'speed' in generation_params:
-            print(f"STATUS: Speed: {generation_params['speed']}x", file=sys.stderr)
         
         # Generate audio
         if hasattr(client, 'audio') and hasattr(client.audio, 'speech'):
@@ -159,7 +152,6 @@ def generate_openai_audio_dynamic(client, text, openai_config):
         else:
             audio_content = response
         
-        print(f"STATUS: Audio generated successfully", file=sys.stderr)
         return audio_content
         
     except Exception as e:
@@ -201,21 +193,17 @@ def save_openai_audio(audio_content, output_path, response_format='mp3'):
                 
                 if result.returncode == 0:
                     temp_mp3.unlink()  # Remove temp MP3
-                    print(f"STATUS: Converted MP3 to WAV: {output_path.name}", file=sys.stderr)
                 else:
                     # If conversion fails, keep MP3
                     output_path = temp_mp3
-                    print(f"STATUS: Saved as MP3 (ffmpeg conversion failed): {output_path.name}", file=sys.stderr)
             except FileNotFoundError:
                 # ffmpeg not available, keep MP3
                 output_path = temp_mp3
-                print(f"STATUS: Saved as MP3 (ffmpeg not available): {output_path.name}", file=sys.stderr)
                 
         else:
             # Save in original format
             with open(output_path, 'wb') as f:
                 f.write(audio_content)
-            print(f"STATUS: Saved audio: {output_path.name}", file=sys.stderr)
         
         return True
         
@@ -239,8 +227,88 @@ def estimate_openai_cost(text, model='tts-1'):
     
     return estimated_cost, char_count
 
+def _update_openai_progress_bar(completed: int, total: int, chunk_times: list):
+    """Update horizontal progress bar for OpenAI chunk processing"""
+    # Calculate progress percentage
+    if total == 0:
+        percent = 100
+    else:
+        percent = (completed / total) * 100
+    
+    # Calculate ETA
+    if completed == 0 or len(chunk_times) == 0:
+        eta_str = "calculating..."
+    elif completed >= total:
+        eta_str = "complete!"
+    else:
+        # Use average of recent chunk times for ETA
+        if len(chunk_times) >= 3:
+            recent_times = chunk_times[-3:]
+            avg_time = sum(recent_times) / len(recent_times)
+        else:
+            avg_time = sum(chunk_times) / len(chunk_times)
+        
+        remaining_chunks = total - completed
+        remaining_seconds = remaining_chunks * avg_time
+        
+        # Format ETA
+        if remaining_seconds < 60:
+            eta_str = f"{int(remaining_seconds)}s"
+        elif remaining_seconds < 3600:
+            minutes = int(remaining_seconds // 60)
+            seconds = int(remaining_seconds % 60)
+            eta_str = f"{minutes}m {seconds}s"
+        else:
+            hours = int(remaining_seconds // 3600)
+            minutes = int((remaining_seconds % 3600) // 60)
+            eta_str = f"{hours}h {minutes}m"
+    
+    # Get terminal width (default to 80 if can't detect)
+    try:
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns
+    except:
+        terminal_width = 80
+    
+    # Build the components separately to ensure no string corruption
+    prefix = "    🤖 OpenAI: "
+    chunk_info = f"{completed}/{total} chunks"
+    percent_info = f"({percent:.0f}%)"
+    eta_info = f"ETA: {eta_str}"
+    
+    # Build suffix with proper spacing
+    suffix = f" {chunk_info} {percent_info} {eta_info}"
+    
+    # Calculate available space for the bar with generous padding
+    total_text_length = len(prefix) + len(suffix) + 2  # +2 for brackets []
+    available_width = terminal_width - total_text_length - 5  # -5 for extra safety
+    bar_width = max(5, min(30, available_width))  # Conservative bar width
+    
+    # Create progress bar
+    if total > 0:
+        filled_length = int(bar_width * completed // total)
+    else:
+        filled_length = bar_width
+    bar = '█' * filled_length + '░' * (bar_width - filled_length)
+    
+    # Build complete line
+    progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Final safety check - if still too long, truncate the bar more
+    while len(progress_line) > terminal_width - 2 and bar_width > 5:
+        bar_width -= 1
+        if total > 0:
+            filled_length = int(bar_width * completed // total)
+        else:
+            filled_length = bar_width
+        bar = '█' * filled_length + '░' * (bar_width - filled_length)
+        progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Clear the line first, then print the progress
+    print(f"\r{' ' * (terminal_width - 1)}\r{progress_line}", end='', flush=True)
+
 def process_openai_chunks_with_retry(client, chunks, output_dir, openai_config):
-    """Process chunks with retry logic and cost estimation"""
+    """Process chunks with retry logic, cost estimation, and progress bar"""
     generated_files = []
     
     # Get configuration parameters
@@ -255,14 +323,21 @@ def process_openai_chunks_with_retry(client, chunks, output_dir, openai_config):
     total_chars = sum(len(chunk) for chunk in chunks)
     estimated_cost, _ = estimate_openai_cost(''.join(chunks), model)
     
-    print(f"STATUS: Processing {len(chunks)} chunks ({total_chars:,} characters)", file=sys.stderr)
-    print(f"STATUS: Estimated cost: ${estimated_cost:.4f} USD", file=sys.stderr)
+    print(f"  📝 Processing {len(chunks)} chunks ({total_chars:,} characters)")
+    print(f"  💰 Estimated cost: ${estimated_cost:.4f} USD")
     
     if estimated_cost > 1.0:  # Warn for costs over $1
-        print(f"⚠️ WARNING: Estimated cost is ${estimated_cost:.2f}", file=sys.stderr)
+        print(f"⚠️ WARNING: Estimated cost is ${estimated_cost:.2f}")
     
+    chunk_times = []  # Track timing for ETA
+    total_chunks = len(chunks)
+    
+    # Print initial progress bar
+    _update_openai_progress_bar(0, total_chunks, chunk_times)
+
     for i, chunk_text in enumerate(chunks):
         chunk_num = i + 1
+        chunk_start_time = time.time()
         
         # Use appropriate extension
         if response_format == 'mp3':
@@ -270,57 +345,55 @@ def process_openai_chunks_with_retry(client, chunks, output_dir, openai_config):
         else:
             output_file = output_dir / f"chunk_{chunk_num:03d}_openai.{response_format}"
         
-        chunk_cost, chunk_chars = estimate_openai_cost(chunk_text, model)
-        print(f"STATUS: Processing chunk {chunk_num}/{len(chunks)} ({chunk_chars} chars, ${chunk_cost:.4f})", file=sys.stderr)
-        
         # Retry logic
         success = False
         for attempt in range(retry_attempts):
             try:
-                start_time = time.time()
-                
                 # Generate audio
                 audio_content = generate_openai_audio_dynamic(client, chunk_text, openai_config)
                 
                 if audio_content is None:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: Attempt {attempt + 1} failed, retrying in {retry_delay}s", file=sys.stderr)
                         time.sleep(retry_delay)
                         continue
                     else:
-                        print(f"ERROR: All {retry_attempts} attempts failed for chunk {chunk_num}", file=sys.stderr)
+                        print(f"\n    ❌ All {retry_attempts} attempts failed for chunk {chunk_num}")
                         if not ignore_errors:
                             break
                         continue
                 
-                generation_time = time.time() - start_time
-                
                 # Save audio
                 if save_openai_audio(audio_content, output_file, response_format):
                     generated_files.append(str(output_file))
-                    print(f"STATUS: Chunk {chunk_num} completed in {generation_time:.1f}s", file=sys.stderr)
                     success = True
                     break
                 else:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: Save failed, retrying...", file=sys.stderr)
                         time.sleep(retry_delay)
                         continue
                     else:
-                        print(f"ERROR: Failed to save chunk {chunk_num} after {retry_attempts} attempts", file=sys.stderr)
+                        print(f"\n    ❌ Failed to save chunk {chunk_num} after {retry_attempts} attempts")
                 
             except Exception as e:
                 if attempt < retry_attempts - 1:
-                    print(f"ERROR: Attempt {attempt + 1} failed: {e}, retrying...", file=sys.stderr)
                     time.sleep(retry_delay)
                     continue
                 else:
-                    print(f"ERROR: Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}", file=sys.stderr)
+                    print(f"\n    ❌ Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}")
                     break
         
         if not success and not skip_failed_chunks:
-            print(f"ERROR: Critical failure on chunk {chunk_num}", file=sys.stderr)
+            print(f"\n    ❌ Critical failure on chunk {chunk_num}")
             break
+        
+        # Record completion time and update progress bar
+        chunk_duration = time.time() - chunk_start_time
+        chunk_times.append(chunk_duration)
+        _update_openai_progress_bar(chunk_num, total_chunks, chunk_times)
+    
+    # Clear progress bar and show completion
+    print()  # New line after progress bar
+    print("    ✅ All chunks processed")
     
     return generated_files
 
@@ -340,14 +413,14 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
             print(f"ERROR: Missing required OpenAI configuration: {', '.join(missing_params)}", file=sys.stderr)
             return []
         
-        print(f"STATUS: Starting OpenAI TTS processing", file=sys.stderr)
-        print(f"STATUS: Model: {openai_config['model']}", file=sys.stderr)
-        print(f"STATUS: Voice: {openai_config['voice']}", file=sys.stderr)
+        log_status(f"Starting OpenAI TTS processing", file=sys.stderr)
+        log_status(f"Model: {openai_config['model']}", file=sys.stderr)
+        log_status(f"Voice: {openai_config['voice']}", file=sys.stderr)
         
         # Display configured parameters
         active_params = {k: v for k, v in openai_config.items() if v is not None and k != 'api_key'}
         if openai_config.get('verbose', False):
-            print(f"STATUS: Active parameters: {active_params}", file=sys.stderr)
+            log_status(f"Active parameters: {active_params}", file=sys.stderr)
         
         # Validate configuration
         if not validate_openai_config(openai_config):
@@ -356,7 +429,7 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
         # Setup OpenAI client
         try:
             client = setup_openai_client(openai_config)
-            print(f"STATUS: OpenAI client initialized successfully", file=sys.stderr)
+            log_status(f"OpenAI client initialized successfully", file=sys.stderr)
         except Exception as e:
             print(f"ERROR: Failed to initialize OpenAI client: {e}", file=sys.stderr)
             return []
@@ -372,7 +445,7 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
         # Chunk text for OpenAI TTS
         chunk_max_chars = openai_config.get('chunk_max_chars', 4000)
         chunks = chunk_text_for_openai(text, chunk_max_chars)
-        print(f"STATUS: Created {len(chunks)} chunks for OpenAI TTS", file=sys.stderr)
+        log_status(f"Created {len(chunks)} chunks for OpenAI TTS", file=sys.stderr)
         
         # Ensure output directory exists
         output_dir = Path(output_dir)
@@ -383,7 +456,7 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
         
         # Final statistics
         success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
-        print(f"STATUS: OpenAI TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
+        log_status(f"OpenAI TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
         
         if len(generated_files) == 0:
             print(f"ERROR: No audio files were generated successfully", file=sys.stderr)

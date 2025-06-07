@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-Text Processor - Universal text cleaning and engine-specific preprocessing
+Text Processor - CLEANED: Reduced verbose preprocessing messages
+FIXED: Added proper imports
 """
 
 import re
 import sys
 from pathlib import Path
+from core.progress_display_manager import log_error
 
 def preprocess_file(input_file: str, output_file: str, config: dict, sections=None) -> bool:
-    """Main preprocessing function - extract, clean, and apply engine-specific processing"""
-    print(f"STATUS: Starting text preprocessing", file=sys.stderr)
+    """Main preprocessing function - CLEANED: Less verbose output"""
+    # CLEANED: Remove verbose start message
     
     try:
         # Extract text from source file
         from preprocessing.file_extractors import extract_text
         text = extract_text(input_file, sections, config)
         
-        word_count = len(text.split())
-        print(f"STATUS: Extracted {word_count:,} words", file=sys.stderr)
+        # CLEANED: Remove verbose word count message
         
         # Apply universal cleaning
         cleaned_text = apply_universal_cleaning(text)
@@ -33,13 +34,12 @@ def preprocess_file(input_file: str, output_file: str, config: dict, sections=No
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(final_text)
         
-        final_word_count = len(final_text.split())
-        print(f"STATUS: Saved {final_word_count:,} words to {output_file}", file=sys.stderr)
+        # CLEANED: Remove verbose save message
         
         return True
         
     except Exception as e:
-        print(f"❌ Text preprocessing failed: {e}", file=sys.stderr)
+        log_error(f"Text preprocessing failed: {e}")
         return False
 
 def apply_universal_cleaning(text: str) -> str:
@@ -148,8 +148,7 @@ def apply_bark_preprocessing(text: str, config: dict) -> str:
     text = re.sub(r'\s+Owen Morgan\.?\s*$', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\s+[A-Z][a-z]+\s+[A-Z][a-z]+\.?\s*$', '', text)
     
-    if fixes_applied > 0:
-        print(f"STATUS: Applied {fixes_applied} Bark pronunciation fixes", file=sys.stderr)
+    # CLEANED: Remove verbose pronunciation fixes message
     
     return text
 

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 Section Manager - Smart text splitting for manageable audio sections
-Splits text into equal-sized sections based on target duration (minutes)
+FIXED: Added proper imports and string formatting
 """
 
 import re
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
+
+from core.progress_display_manager import log_info, log_status
 
 class SectionManager:
     """Handles intelligent text splitting for pipeline processing"""
@@ -19,12 +21,9 @@ class SectionManager:
         except KeyError:
             raise ValueError("Missing required config: pipeline.target_section_length")
         
-        # Rough estimation: 150 words per minute of speech
         self.words_per_minute = 150
         self.target_words = self.target_minutes * self.words_per_minute
         
-        print(f"STATUS: Target section length: {self.target_minutes} minutes (~{self.target_words} words)", file=sys.stderr)
-    
     def estimate_audio_duration_minutes(self, text: str) -> float:
         """Estimate audio duration in minutes based on word count"""
         word_count = len(text.split())
@@ -35,47 +34,35 @@ class SectionManager:
         total_words = len(text.split())
         estimated_duration = self.estimate_audio_duration_minutes(text)
         
-        print(f"STATUS: Text analysis - {total_words:,} words, ~{estimated_duration:.1f} minutes", file=sys.stderr)
+        log_status(f"Text analysis - {total_words:,} words, ~{estimated_duration:.1f} minutes")
         
-        # If already under target, return as single section
         if estimated_duration <= self.target_minutes:
-            print(f"STATUS: Text fits in single section", file=sys.stderr)
+            log_info("Text fits in single section", "info")
             return [text]
         
-        # Calculate optimal number of sections
         num_sections = max(2, int(estimated_duration / self.target_minutes) + 1)
         target_words_per_section = total_words // num_sections
         
-        print(f"STATUS: Splitting into {num_sections} sections (~{target_words_per_section:,} words each)", file=sys.stderr)
+        log_info(f"Splitting into {num_sections} sections (~{target_words_per_section:,} words each)")
         
-        # Try paragraph-based splitting first
         sections = self._split_by_paragraphs(text, target_words_per_section, num_sections)
         
-        # Fallback to sentence-based if paragraphs don't work
         if not sections:
-            print(f"STATUS: Paragraph splitting failed, using sentence boundaries", file=sys.stderr)
             sections = self._split_by_sentences(text, target_words_per_section, num_sections)
         
-        # Final fallback to word-based
         if not sections:
-            print(f"STATUS: Sentence splitting failed, using word boundaries", file=sys.stderr)
             sections = self._split_by_words(text, target_words_per_section)
         
-        # Log final sections
-        for i, section in enumerate(sections, 1):
-            section_words = len(section.split())
-            section_duration = self.estimate_audio_duration_minutes(section)
-            print(f"STATUS: Section {i}: {section_words:,} words (~{section_duration:.1f} min)", file=sys.stderr)
+        log_info(f"Created {len(sections)} sections", "success")
         
         return sections
     
     def _split_by_paragraphs(self, text: str, target_words: int, num_sections: int) -> List[str]:
         """Split text at paragraph boundaries"""
-        # Split on double newlines (paragraph markers)
         paragraphs = re.split(r'\n\s*\n', text)
         
         if len(paragraphs) < 2:
-            return []  # No paragraph structure
+            return []
         
         sections = []
         current_section = ""
@@ -112,11 +99,10 @@ class SectionManager:
     
     def _split_by_sentences(self, text: str, target_words: int, num_sections: int) -> List[str]:
         """Split text at sentence boundaries"""
-        # Split on sentence endings
         sentences = re.split(r'(?<=[.!?])\s+', text)
         
         if len(sentences) < num_sections:
-            return []  # Not enough sentences
+            return []
         
         sections = []
         current_section = ""
@@ -129,7 +115,6 @@ class SectionManager:
             
             sentence_words = len(sentence.split())
             
-            # If adding this sentence would exceed target and we have content
             if current_word_count > 0 and current_word_count + sentence_words > target_words * 1.2:
                 sections.append(current_section.strip())
                 current_section = sentence
@@ -141,7 +126,6 @@ class SectionManager:
                     current_section = sentence
                 current_word_count += sentence_words
         
-        # Add final section
         if current_section.strip():
             sections.append(current_section.strip())
         

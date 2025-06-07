@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+from core.progress_display_manager import log_error, log_info, log_success, log_warning
+
 class ConfigError(Exception):
     """Custom exception for configuration errors"""
     pass
@@ -30,7 +32,7 @@ class ConfigManager:
         if self.default_config_path.exists():
             return True
         
-        print(f"📄 Creating default config: {self.default_config_path}")
+        log_info("📄 Creating default config: {self.default_config_path}")
         
         default_config = self._create_perfect_default_config()
         
@@ -38,11 +40,11 @@ class ConfigManager:
             with open(self.default_config_path, 'w', encoding='utf-8') as f:
                 json.dump(default_config, f, indent=2)
             
-            print(f"✅ Default config created successfully")
+            log_success(f"Default config created successfully")
             return True
             
         except Exception as e:
-            print(f"❌ Failed to create default config: {e}")
+            log_error(f"Failed to create default config: {e}")
             return False
     
     def _create_perfect_default_config(self):
@@ -257,7 +259,7 @@ class ConfigManager:
                     json.dump(config, f, indent=2)
                     
         except Exception as e:
-            print(f"⚠️ Could not update project name in config: {e}")
+            log_warning(f"Could not update project name in config: {e}")
 
     def _update_project_metadata(self, config_file, project_name):
         """Update metadata in the project config file"""
@@ -279,7 +281,7 @@ class ConfigManager:
                 json.dump(config, f, indent=2)
                 
         except Exception as e:
-            print(f"⚠️ Could not update project metadata: {e}")
+            log_warning(f"Could not update project metadata: {e}")
     
     def load_config(self, config_file):
         """Load configuration from file with validation"""

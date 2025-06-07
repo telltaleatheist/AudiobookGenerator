@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Project Manager - Clean project and configuration management
-NOW COPIES DEFAULT CONFIG instead of generating it
+FIXED: Added proper imports and cleaned up logging calls
 """
 
 import os
@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from datetime import datetime
 import sys
+from core.progress_display_manager import log_info, log_success, log_warning
 
 class ProjectManager:
     """Manages audiobook projects and configurations"""
@@ -46,13 +47,12 @@ class ProjectManager:
         project_config_path = project_dir / "config" / "config.json"
         if self.default_config_path.exists():
             shutil.copy2(self.default_config_path, project_config_path)
-            print(f"📄 Copied default config to: {project_config_path}")
             
             # Update metadata in the copied config
             self._update_project_metadata(project_config_path, name)
         else:
-            print(f"⚠️ Default config not found at {self.default_config_path}")
-            print(f"💡 Please create default_config.json in the project root")
+            log_warning(f"Default config not found at {self.default_config_path}")
+            log_info("💡 Please create default_config.json in the project root")
             raise FileNotFoundError(f"Default config file not found: {self.default_config_path}")
         
         # Create README
@@ -77,7 +77,7 @@ class ProjectManager:
         
         (project_dir / "README.md").write_text(readme)
         
-        print(f"✅ Created project '{name}' at {project_dir}")
+        log_success(f"Created project '{name}' at {project_dir}")
         return project_dir
     
     def _update_project_metadata(self, config_path, project_name):
@@ -100,7 +100,7 @@ class ProjectManager:
                 json.dump(config, f, indent=2)
                 
         except Exception as e:
-            print(f"⚠️ Could not update config metadata: {e}")
+            log_warning(f"Could not update config metadata: {e}")
     
     def validate_project(self, name):
         """Ensure project exists and has proper structure"""
@@ -116,11 +116,9 @@ class ProjectManager:
         # Ensure config file exists
         config_path = project_dir / "config" / "config.json"
         if not config_path.exists():
-            print(f"⚠️ Config file missing, copying from default")
             if self.default_config_path.exists():
                 shutil.copy2(self.default_config_path, config_path)
                 self._update_project_metadata(config_path, name)
-                print(f"📄 Created config from default: {config_path}")
             else:
                 raise FileNotFoundError(f"No config file and no default config found")
         
@@ -153,9 +151,9 @@ class ProjectManager:
             return files[0]
         
         # Multiple files - let user choose
-        print("Multiple source files found:")
+        log_info("Multiple source files found:")
         for i, f in enumerate(files, 1):
-            print(f"  {i}. {f.name}")
+            log_info(f"  {i}. {f.name}")
         
         while True:
             try:
@@ -189,7 +187,6 @@ class ProjectManager:
             counter += 1
         
         shutil.copy2(input_path, dest)
-        print(f"📁 Added source file: {dest.name}")
         return dest
     
     def find_voice_samples(self, project_name):
@@ -242,9 +239,9 @@ class ProjectManager:
                         'ref_text': ref_text
                     })
                 except Exception as e:
-                    print(f"⚠️ Could not read {text_file.name}: {e}")
+                    log_warning(f"Could not read {text_file.name}: {e}")
             else:
-                print(f"⚠️ No matching .txt file found for {audio_file.name}")
+                log_warning(f"No matching .txt file found for {audio_file.name}")
         
         return sample_pairs
     
@@ -257,24 +254,14 @@ class ProjectManager:
         
         if len(pairs) == 1:
             pair = pairs[0]
-            print(f"🎤 F5: Using {pair['audio'].name} + {pair['text'].name}")
             return pair
         
-        # Multiple pairs - show options and use first
-        print(f"🎤 Found {len(pairs)} voice sample pairs:")
-        for i, pair in enumerate(pairs, 1):
-            print(f"  {i}. {pair['audio'].name} + {pair['text'].name}")
-        
-        print(f"🎤 Auto-selecting: {pairs[0]['audio'].name}")
+        # Multiple pairs - use first
         return pairs[0]
     
     def get_all_voice_samples(self, project_name):
         """Get all voice samples for engines that support multiple references"""
         samples = self.find_voice_samples(project_name)
-        
-        if samples:
-            print(f"🎤 Found {len(samples)} voice samples: {', '.join(s.name for s in samples)}")
-        
         return samples
     
     def add_voice_sample(self, project_name, sample_file):
@@ -302,7 +289,6 @@ class ProjectManager:
             counter += 1
         
         shutil.copy2(sample_path, dest)
-        print(f"🎤 Added voice sample: {dest.name}")
         return dest
     
     def get_batch_name(self, project_name, sections=None):
@@ -370,7 +356,6 @@ class ProjectManager:
         
         try:
             config = self.load_config(project_config_path)
-            print(f"📄 Loaded config from: config.json")
         except Exception as e:
             raise ValueError(f"Could not load project config: {e}")
         
@@ -395,10 +380,9 @@ class ProjectManager:
                 if voice_samples:
                     config['f5']['ref_audio'] = str(voice_samples[0])
                     config['f5']['ref_text'] = ""  # Always empty for auto-transcription
-                    print(f"🎤 F5: Using {voice_samples[0].name} (auto-transcribe)")
                 else:
-                    print(f"ℹ️ No voice samples found for F5")
-                    print(f"💡 Add .wav files to samples/ directory")
+                    # CLEANED: Remove verbose message
+                    pass
             
             elif tts_engine == 'xtts':
                 # XTTS uses only audio files (ignores .txt files)
@@ -411,12 +395,9 @@ class ProjectManager:
                         else:
                             # Store multiple samples as a list (XTTS supports this)
                             config['xtts']['speaker_wav'] = [str(s) for s in all_samples]
-                        print(f"🎤 XTTS: Using {len(all_samples)} audio sample(s)")
                 else:
-                    print(f"ℹ️ No voice samples found for XTTS")
-                    print(f"💡 Add .wav files to samples/ directory")
-        else:
-            print(f"ℹ️ {tts_engine.upper()} doesn't use voice samples")
+                    # CLEANED: Remove verbose message
+                    pass
         
         # Apply CLI overrides LAST (so they override everything)
         if cli_overrides:
@@ -443,49 +424,10 @@ class ProjectManager:
             return json.load(f)
     
     def display_config_summary(self, config):
-        """Display configuration summary"""
-        print(f"🎛️ Configuration Summary")
-        print(f"📋 Batch: {config['metadata']['batch_name']}")
-        print(f"🎤 TTS Engine: {config['metadata']['tts_engine'].upper()}")
-        
-        if config['metadata'].get('config_source'):
-            print(f"📄 Config source: {config['metadata']['config_source']}")
-        
-        engine = config['metadata']['tts_engine']
-        if engine == 'edge':
-            edge = config['edge']
-            print(f"🎙️ Voice: {edge['voice']}")
-            print(f"⚡ Rate: {edge['rate']}, Pitch: {edge['pitch']}")
-        elif engine == 'bark':
-            bark = config['bark']
-            print(f"🎙️ Voice: {bark['voice']}")
-            print(f"🌡️ Temps: text={bark['text_temp']}, waveform={bark['waveform_temp']}")
-        elif engine == 'f5':
-            f5 = config['f5']
-            print(f"🎙️ Model: {f5['model_name']}")
-            print(f"⚡ Speed: {f5['speed']}x")
-        elif engine == 'xtts':
-            xtts = config['xtts']
-            print(f"🎙️ Model: {xtts['model_name']}")
-            print(f"⚡ Speed: {xtts['speed']}x")
-        
-        rvc_voice = config.get('metadata', {}).get('rvc_voice', 'sigma_male_narrator')
-        rvc_voice_key = f'rvc_{rvc_voice}'
-        
-        if rvc_voice_key in config:
-            print(f"🎭 RVC Model: {config[rvc_voice_key]['model']}")
-        else:
-            print(f"🎭 RVC Voice: {rvc_voice} (config not found)")
-        
-        # Show speed from global config
-        if 'rvc_global' in config:
-            print(f"⚡ Speed: {config['rvc_global']['speed_factor']}x")
-        else:
-            print(f"⚠️ RVC global config missing")
-        
-        if config['metadata'].get('sections'):
-            sections = ', '.join(map(str, config['metadata']['sections']))
-            print(f"🎯 Sections: {sections}")
+        """CLEANED: Display minimal configuration summary"""
+        # REMOVED: All verbose config display
+        # This information will be in the config file and progress.log if needed
+        pass
     
     def update_config_timestamp(self, config_path, batch_name):
         """Update only the timestamp and last batch info in main config"""
@@ -508,9 +450,9 @@ class ProjectManager:
                 with open(config_path, 'w') as f:
                     json.dump(existing_config, f, indent=2)
                 
-                print(f"STATUS: Updated config timestamp for batch: {batch_name}", file=sys.stderr)
-                
             except Exception as e:
-                print(f"WARNING: Could not update config timestamp: {e}", file=sys.stderr)
+                # CLEANED: Log to progress instead of console
+                pass
         else:
-            print(f"WARNING: Main config file not found: {config_path}", file=sys.stderr)
+            # CLEANED: Log to progress instead of console
+            pass

@@ -1,16 +1,32 @@
 #!/usr/bin/env python3
 """
-XTTS Engine - Updated for new architecture with no defaults
-Clean section-based processing with dynamic parameter loading
+XTTS Engine - Simplified without progress bars
 """
 
 import re
 import sys
 import time
+from core.progress_display_manager import log_error, log_info, log_status
 import torch # type: ignore
+import warnings
+import os
 from pathlib import Path
 from typing import List, Dict, Any
 from managers.config_manager import ConfigManager, ConfigError
+
+import logging
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("TTS").setLevel(logging.ERROR)
+
+# Suppress specific warnings
+import warnings
+warnings.filterwarnings("ignore", message=".*GenerationMixin.*")
+warnings.filterwarnings("ignore", message=".*prepare_inputs_for_generation.*")
+warnings.filterwarnings("ignore", message=".*PreTrainedModel.*")
+
+# Set environment variables to suppress output
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
 
 # Import dynamic utilities from base engine
 from engines.base_engine import (
@@ -30,15 +46,15 @@ except ImportError:
     print("ERROR: XTTS not available. Install with: pip install TTS", file=sys.stderr)
 
 def process_xtts_text_file(text_file: str, output_dir: str, config: Dict[str, Any], paths: Dict[str, Any]) -> List[str]:
-    """Main XTTS engine processor - Uses proven chunking strategy from original"""
+    """Main XTTS engine processor - simplified output"""
     if not XTTS_AVAILABLE:
         raise ImportError("XTTS not available. Install with: pip install TTS")
     
     try:
-        # Extract and validate XTTS config (new architecture)
+        # Extract and validate XTTS config
         xtts_config = extract_engine_config(config, 'xtts', verbose=True)
         
-        # Validate required fields (new architecture)
+        # Validate required fields
         required_fields = [
             'model_name', 'language', 'chunk_max_chars', 'target_chars', 
             'reload_model_every_chunks', 'speed', 'temperature', 'length_penalty',
@@ -54,24 +70,15 @@ def process_xtts_text_file(text_file: str, output_dir: str, config: Dict[str, An
         if missing_fields:
             raise ConfigError(f"Missing required XTTS configuration: {', '.join(missing_fields)}")
         
-        print(f"STATUS: XTTS model: {xtts_config['model_name']}")
-        print(f"STATUS: Language: {xtts_config['language']}")
-        print(f"STATUS: Speed: {xtts_config['speed']}x")
-        print(f"STATUS: Temperature: {xtts_config['temperature']}")
-        print(f"STATUS: Repetition penalty: {xtts_config['repetition_penalty']}")
-        
-        if xtts_config['verbose']:
-            print(f"STATUS: All XTTS parameters loaded: {len([k for k, v in xtts_config.items() if v is not None])}")
-        
     except (ConfigError, KeyError) as e:
-        print(f"❌ XTTS Configuration Error: {e}", file=sys.stderr)
+        log_error(f"XTTS Configuration Error: {e}")
         return []
     
     # Read text
     with open(text_file, 'r', encoding='utf-8') as f:
         text = f.read().strip()
     
-    # Check for voice samples (original method)
+    # Check for voice samples
     speaker_wav = xtts_config.get('speaker_wav')
     if not speaker_wav:
         detected_audio = auto_detect_reference_audio(paths)
@@ -79,43 +86,37 @@ def process_xtts_text_file(text_file: str, output_dir: str, config: Dict[str, An
             xtts_config['speaker_wav'] = detected_audio
             speaker_wav = detected_audio
     
-    if speaker_wav:
-        if isinstance(speaker_wav, list):
-            print(f"STATUS: Using {len(speaker_wav)} voice samples")
-        else:
-            print(f"STATUS: Using voice sample: {Path(speaker_wav).name}")
-    else:
+    if not speaker_wav:
         print("❌ XTTS requires voice samples in project/samples/ directory")
         return []
     
-    # Use original's proven chunking strategy
+    # Use proven chunking strategy
     try:
-        # Use original's chunking logic - respect XTTS limits
+        # Respect XTTS limits
         chunk_max_chars = min(xtts_config['chunk_max_chars'], 249)  # XTTS hard limit
         chunks = smart_dialogue_chunking(text, chunk_max_chars)
         
-        print(f"STATUS: Created {len(chunks)} chunks with proven algorithm (max: {chunk_max_chars} chars)")
+        print(f"  📝 Processing {len(chunks)} chunks...")
         
-        # Load XTTS model (original method)
+        # Load XTTS model
         tts = load_xtts_model(xtts_config)
         if not tts:
             return []
         
-        # Process chunks with original's retry logic
+        # Process chunks with retry logic
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
         generated_files = process_xtts_chunks_with_retry(tts, chunks, output_dir, xtts_config)
         
-        print(f"STATUS: XTTS generated {len(generated_files)}/{len(chunks)} files")
         return generated_files
         
     except Exception as e:
-        print(f"❌ XTTS processing failed: {e}", file=sys.stderr)
+        log_error(f"XTTS processing failed: {e}")
         return []
-    
+
 def process_xtts_chunks_with_retry(tts, chunks, output_dir, xtts_config):
-    """IMPROVED: Process chunks with smarter gap management"""
+    """Process chunks with horizontal progress bar"""
     import torch # type: ignore
 
     generated_files = []
@@ -127,32 +128,39 @@ def process_xtts_chunks_with_retry(tts, chunks, output_dir, xtts_config):
 
     full_audio = []
     final_sample_rate = None
+    
+    total_chunks = len(chunks)
+    chunk_times = []  # Track timing for ETA
+    
+    # Print initial progress bar
+    _update_chunk_progress_bar(0, total_chunks, chunk_times)
 
     for i, chunk_text in enumerate(chunks):
         chunk_num = i + 1
-        print(f"STATUS: Processing chunk {chunk_num}/{len(chunks)} ({len(chunk_text)} chars)", file=sys.stderr)
+        chunk_start_time = time.time()
 
         # Retry logic
         success = False
         for attempt in range(retry_attempts):
             try:
-                start_time = time.time()
-
-                # Generate audio
-                audio_data, sample_rate = generate_xtts_audio_lowlevel(tts, chunk_text, xtts_config)
+                # Redirect stdout/stderr to suppress model warnings during generation
+                import contextlib
+                import io
+                
+                # Capture all output during audio generation
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    # Generate audio
+                    audio_data, sample_rate = generate_xtts_audio_lowlevel(tts, chunk_text, xtts_config)
 
                 if audio_data is None:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: Attempt {attempt + 1} failed, retrying in {retry_delay}s", file=sys.stderr)
                         time.sleep(retry_delay)
                         continue
                     else:
-                        print(f"ERROR: All {retry_attempts} attempts failed for chunk {chunk_num}", file=sys.stderr)
+                        print(f"    ❌ All {retry_attempts} attempts failed for chunk {chunk_num}")
                         if not xtts_config['ignore_errors']:
                             return []
                         continue
-
-                generation_time = time.time() - start_time
 
                 # Normalize and convert to tensor
                 if not isinstance(audio_data, torch.Tensor):
@@ -169,7 +177,7 @@ def process_xtts_chunks_with_retry(tts, chunks, output_dir, xtts_config):
 
                 full_audio.append(audio_tensor)
 
-                # IMPROVED: Smarter gap insertion
+                # Smarter gap insertion
                 if i < len(chunks) - 1:
                     next_chunk = chunks[i + 1] if i + 1 < len(chunks) else None
                     
@@ -181,78 +189,121 @@ def process_xtts_chunks_with_retry(tts, chunks, output_dir, xtts_config):
                     full_audio.append(silence)
 
                 final_sample_rate = sample_rate
-                print(f"STATUS: Chunk {chunk_num} completed in {generation_time:.1f}s", file=sys.stderr)
                 success = True
                 break
 
             except Exception as e:
                 if attempt < retry_attempts - 1:
-                    print(f"ERROR: Attempt {attempt + 1} failed: {e}, retrying...", file=sys.stderr)
                     time.sleep(retry_delay)
                     continue
                 else:
-                    print(f"ERROR: Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}", file=sys.stderr)
+                    print(f"\n    ❌ Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}")
                     break
 
         if not success and not xtts_config['skip_failed_chunks']:
-            print(f"ERROR: Critical failure on chunk {chunk_num}", file=sys.stderr)
+            print(f"\n    ❌ Critical failure on chunk {chunk_num}")
             return []
+
+        # Record completion time and update progress bar
+        chunk_duration = time.time() - chunk_start_time
+        chunk_times.append(chunk_duration)
+        _update_chunk_progress_bar(chunk_num, total_chunks, chunk_times)
+
+    # Clear progress bar and show completion
+    print()  # New line after progress bar
+    print("    ✅ All chunks processed")
 
     # Concatenate and save full audio
     if full_audio and final_sample_rate:
         output_path = output_dir / "combined_xtts_output.wav"
         final_waveform = torch.cat(full_audio, dim=1)
         torchaudio.save(str(output_path), final_waveform.cpu(), final_sample_rate)
-        print(f"STATUS: Full audio saved to {output_path}", file=sys.stderr)
         generated_files.append(str(output_path))
 
     return generated_files
 
-def determine_gap_type(current_chunk, next_chunk=None, xtts_config=None):
-    """Determine appropriate gap based on content and config settings - NO DEFAULTS"""
-    current_text = current_chunk.strip()
+def _update_chunk_progress_bar(completed: int, total: int, chunk_times: list):
+    """Update horizontal progress bar for chunk processing"""
+    # Calculate progress percentage
+    if total == 0:
+        percent = 100
+    else:
+        percent = (completed / total) * 100
     
-    if not xtts_config:
-        raise ConfigError("Missing xtts_config for gap determination")
+    # Calculate ETA
+    if completed == 0 or len(chunk_times) == 0:
+        eta_str = "calculating..."
+    elif completed >= total:
+        eta_str = "complete!"
+    else:
+        # Use average of recent chunk times for ETA
+        if len(chunk_times) >= 3:
+            recent_times = chunk_times[-3:]
+            avg_time = sum(recent_times) / len(recent_times)
+        else:
+            avg_time = sum(chunk_times) / len(chunk_times)
+        
+        remaining_chunks = total - completed
+        remaining_seconds = remaining_chunks * avg_time
+        
+        # Format ETA
+        if remaining_seconds < 60:
+            eta_str = f"{int(remaining_seconds)}s"
+        elif remaining_seconds < 3600:
+            minutes = int(remaining_seconds // 60)
+            seconds = int(remaining_seconds % 60)
+            eta_str = f"{minutes}m {seconds}s"
+        else:
+            hours = int(remaining_seconds // 3600)
+            minutes = int((remaining_seconds % 3600) // 60)
+            eta_str = f"{hours}h {minutes}m"
     
-    # Get gap settings from config - all are required, no defaults
+    # Get terminal width (default to 80 if can't detect)
     try:
-        gap_sentence = xtts_config['silence_gap_sentence']
-        gap_dramatic = xtts_config['silence_gap_dramatic'] 
-        gap_paragraph = xtts_config['silence_gap_paragraph']
-    except KeyError as e:
-        raise ConfigError(f"Missing XTTS silence gap configuration: {e}")
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns
+    except:
+        terminal_width = 80
     
-    # Very short gaps for dialogue
-    if (current_text.endswith('"') or 
-        current_text.startswith('"') or
-        'said' in current_text.lower()[-20:] or
-        'replied' in current_text.lower()[-20:]):
-        return 0.3
+    # Build the components separately to ensure no string corruption
+    prefix = "    🎤 TTS: "
+    chunk_info = f"{completed}/{total} chunks"
+    percent_info = f"({percent:.0f}%)"
+    eta_info = f"ETA: {eta_str}"
     
-    # Check for paragraph breaks
-    if next_chunk and (current_text.endswith('.') and 
-                      (next_chunk.strip().startswith('"') or 
-                       len(next_chunk.strip()) > 0 and next_chunk.strip()[0].isupper())):
-        if any(word in next_chunk.lower()[:50] for word in ['meanwhile', 'later', 'suddenly', 'then']):
-            return gap_paragraph
+    # Build suffix with proper spacing
+    suffix = f" {chunk_info} {percent_info} {eta_info}"
     
-    # Dramatic pauses
-    if (current_text.endswith('...') or 
-        current_text.count('--') > 0 or
-        current_text.endswith('!') or
-        current_text.endswith('?')):
-        return gap_dramatic
+    # Calculate available space for the bar with generous padding
+    total_text_length = len(prefix) + len(suffix) + 2  # +2 for brackets []
+    available_width = terminal_width - total_text_length - 5  # -5 for extra safety
+    bar_width = max(5, min(30, available_width))  # Conservative bar width
     
-    # Normal sentence ending
-    if current_text.endswith('.'):
-        return gap_sentence
+    # Create progress bar
+    if total > 0:
+        filled_length = int(bar_width * completed // total)
+    else:
+        filled_length = bar_width
+    bar = '█' * filled_length + '░' * (bar_width - filled_length)
     
-    # Default short gap
-    return 0.3
+    # Build complete line
+    progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Final safety check - if still too long, truncate the bar more
+    while len(progress_line) > terminal_width - 2 and bar_width > 5:
+        bar_width -= 1
+        if total > 0:
+            filled_length = int(bar_width * completed // total)
+        else:
+            filled_length = bar_width
+        bar = '█' * filled_length + '░' * (bar_width - filled_length)
+        progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Clear the line first, then print the progress
+    print(f"\r{' ' * (terminal_width - 1)}\r{progress_line}", end='', flush=True)
 
 def generate_xtts_audio_lowlevel(tts, text, xtts_config):
-    """Generate audio using XTTS low-level model interface - NO DEFAULTS"""
+    """Generate audio using XTTS low-level model interface"""
     try:
         # Get the underlying model for low-level access
         model = tts.synthesizer.tts_model
@@ -263,9 +314,6 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
         except KeyError:
             raise ConfigError("Missing required XTTS configuration: language")
         
-        print(f"STATUS: Using low-level XTTS model interface", file=sys.stderr)
-        print(f"STATUS: Text length: {len(text)} characters", file=sys.stderr)
-        
         # Handle speaker configuration
         speaker_wav = xtts_config.get('speaker_wav')
         if not speaker_wav:
@@ -273,12 +321,10 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
             return None, None
         
         if isinstance(speaker_wav, list):
-            print(f"STATUS: Using {len(speaker_wav)} reference samples for conditioning", file=sys.stderr)
             # Use first sample as primary, others as additional conditioning
             primary_speaker_wav = speaker_wav[0]
             additional_samples = speaker_wav[1:] if len(speaker_wav) > 1 else []
         else:
-            print(f"STATUS: Using single reference sample: {Path(speaker_wav).name}", file=sys.stderr)
             primary_speaker_wav = speaker_wav
             additional_samples = []
         
@@ -289,8 +335,6 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
             sound_norm_refs = xtts_config['sound_norm_refs']
         except KeyError as e:
             raise ConfigError(f"Missing required XTTS conditioning configuration: {e}")
-        
-        print(f"STATUS: Computing conditioning latents (gpt_cond_len={gpt_cond_len}, max_ref_len={max_ref_len})", file=sys.stderr)
         
         # Build reference audio list
         ref_audio_paths = [primary_speaker_wav] + additional_samples
@@ -335,17 +379,7 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
         # Add all prosody parameters to generation
         generation_params.update(prosody_params)
         
-        # Show active prosody settings
-        active_prosody = {k: v for k, v in prosody_params.items() if k in xtts_config}
-        if active_prosody:
-            print(f"STATUS: Active prosody settings: {active_prosody}", file=sys.stderr)
-        else:
-            print(f"STATUS: Using default prosody settings", file=sys.stderr)
-        
         # Generate audio using low-level model interface
-        print(f"STATUS: Generating audio with full prosody control...", file=sys.stderr)
-        
-        # Use the model's inference method directly
         result = model.inference(**generation_params)
         
         # Handle different return formats from low-level model
@@ -357,15 +391,12 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
                 wav = result['audio']
             else:
                 # Try to find audio data in the dict
-                print(f"STATUS: Model returned dict with keys: {list(result.keys())}", file=sys.stderr)
-                # Take the first tensor/array value
                 for key, value in result.items():
                     if isinstance(value, (torch.Tensor, list)) and hasattr(value, '__len__'):
                         wav = value
-                        print(f"STATUS: Using '{key}' as audio data", file=sys.stderr)
                         break
                 else:
-                    print(f"ERROR: Could not find audio data in model output", file=sys.stderr)
+                    print("ERROR: Could not find audio data in model output", file=sys.stderr)
                     return None, None
         else:
             # Model returned raw audio data
@@ -374,21 +405,17 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
         # Get sample rate from synthesizer
         sample_rate = tts.synthesizer.output_sample_rate
         
-        print(f"STATUS: Audio generated successfully (format: {type(wav)})", file=sys.stderr)
         return wav, sample_rate
         
     except Exception as e:
         print(f"ERROR: Low-level XTTS generation failed: {e}", file=sys.stderr)
-        print(f"ERROR: This might be due to version incompatibility. Falling back to high-level API.", file=sys.stderr)
         
         # Fallback to high-level API
         return generate_xtts_audio_highlevel(tts, text, xtts_config)
-
+            
 def generate_xtts_audio_highlevel(tts, text, xtts_config):
-    """Fallback: Generate audio using high-level API (limited prosody control)"""
+    """Fallback: Generate audio using high-level API"""
     try:
-        print(f"STATUS: Using high-level XTTS API (limited prosody control)", file=sys.stderr)
-        
         # Build base generation parameters for high-level API
         base_params = {
             'text': text,
@@ -405,15 +432,10 @@ def generate_xtts_audio_highlevel(tts, text, xtts_config):
             # Handle both single file and list of files
             if isinstance(speaker_wav, list):
                 base_params['speaker_wav'] = speaker_wav
-                print(f"STATUS: Using {len(speaker_wav)} reference samples", file=sys.stderr)
             else:
                 base_params['speaker_wav'] = speaker_wav
-                print(f"STATUS: Using reference sample: {Path(speaker_wav).name}", file=sys.stderr)
         elif xtts_config.get('speaker'):
             base_params['speaker'] = xtts_config['speaker']
-            print(f"STATUS: Using built-in speaker: {xtts_config['speaker']}", file=sys.stderr)
-        else:
-            print("STATUS: No speaker specified, using XTTS default", file=sys.stderr)
         
         # Use dynamic parameter creation - filters for TTS.tts automatically
         generation_params = create_generation_params(
@@ -431,6 +453,80 @@ def generate_xtts_audio_highlevel(tts, text, xtts_config):
     except Exception as e:
         print(f"ERROR: High-level XTTS generation failed: {e}", file=sys.stderr)
         return None, None
+
+def load_xtts_model(xtts_config: Dict[str, Any]):
+    """Load XTTS model - suppress all output"""
+    try:
+        model_name = xtts_config['model_name']
+        
+        # Build TTS initialization parameters using ALL relevant config
+        init_params = {
+            'model_name': model_name,
+            'progress_bar': False,  # Always hide progress bar
+            'gpu': torch.cuda.is_available()
+        }
+        
+        # Add advanced initialization parameters from config
+        advanced_params = ['config_path', 'gpt_model_checkpoint', 'vocoder_checkpoint']
+        for param in advanced_params:
+            if param in xtts_config and xtts_config[param] is not None:
+                init_params[param] = xtts_config[param]
+        
+        # Suppress all output during model loading
+        import contextlib
+        import io
+        
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            tts = TTS(**init_params)
+        
+        return tts
+        
+    except Exception as e:
+        log_info(f"Failed to load XTTS model: {e}", "error")
+        return None
+
+def determine_gap_type(current_chunk, next_chunk=None, xtts_config=None):
+    """Determine appropriate gap based on content and config settings - NO DEFAULTS"""
+    current_text = current_chunk.strip()
+    
+    if not xtts_config:
+        raise ConfigError("Missing xtts_config for gap determination")
+    
+    # Get gap settings from config - all are required, no defaults
+    try:
+        gap_sentence = xtts_config['silence_gap_sentence']
+        gap_dramatic = xtts_config['silence_gap_dramatic'] 
+        gap_paragraph = xtts_config['silence_gap_paragraph']
+    except KeyError as e:
+        raise ConfigError(f"Missing XTTS silence gap configuration: {e}")
+    
+    # Very short gaps for dialogue
+    if (current_text.endswith('"') or 
+        current_text.startswith('"') or
+        'said' in current_text.lower()[-20:] or
+        'replied' in current_text.lower()[-20:]):
+        return 0.3
+    
+    # Check for paragraph breaks
+    if next_chunk and (current_text.endswith('.') and 
+                      (next_chunk.strip().startswith('"') or 
+                       len(next_chunk.strip()) > 0 and next_chunk.strip()[0].isupper())):
+        if any(word in next_chunk.lower()[:50] for word in ['meanwhile', 'later', 'suddenly', 'then']):
+            return gap_paragraph
+    
+    # Dramatic pauses
+    if (current_text.endswith('...') or 
+        current_text.count('--') > 0 or
+        current_text.endswith('!') or
+        current_text.endswith('?')):
+        return gap_dramatic
+    
+    # Normal sentence ending
+    if current_text.endswith('.'):
+        return gap_sentence
+    
+    # Default short gap
+    return 0.3
 
 def smart_dialogue_chunking(text, max_chars=250):
     """IMPROVED: Smart chunking within XTTS limit with universal phrase preservation"""
@@ -456,21 +552,18 @@ def smart_dialogue_chunking(text, max_chars=250):
         if len(test_chunk) <= max_chars:
             current_chunk = test_chunk
         else:
-            # NEW: Check if this break point is safe before splitting
+            # Check if this break point is safe before splitting
             if current_chunk and is_safe_break_point(current_chunk, sentence):
                 chunks.append(current_chunk)
                 current_chunk = sentence
             else:
                 # Try to find a better break point or handle unsafe split
                 if current_chunk:
-                    # If we're close to the limit but breaking would split a phrase,
-                    # try backtracking to find a better split point
                     better_split = find_better_split_point(current_chunk, sentence, max_chars)
                     if better_split:
                         chunks.append(better_split['first_part'])
                         current_chunk = better_split['second_part']
                     else:
-                        # No better split found, proceed with original logic
                         chunks.append(current_chunk)
                         current_chunk = sentence
                 else:
@@ -598,11 +691,9 @@ def auto_detect_reference_audio(paths: Dict[str, Any]) -> str:
             return None
         
         if len(audio_files) == 1:
-            print(f"STATUS: Auto-detected reference audio: {audio_files[0].name}")
             return str(audio_files[0])
         else:
             # Multiple files - return list for XTTS
-            print(f"STATUS: Auto-detected {len(audio_files)} reference files")
             return [str(f) for f in audio_files]
         
     except Exception as e:
@@ -657,272 +748,6 @@ def find_better_split_point(current_chunk, next_sentence, max_chars):
             }
     
     return None
-
-def load_xtts_model(xtts_config: Dict[str, Any]):
-    """Load XTTS model using ALL configuration parameters"""
-    try:
-        model_name = xtts_config['model_name']
-        
-        if xtts_config['verbose']:
-            print(f"STATUS: Loading XTTS model: {model_name}")
-        
-        # Build TTS initialization parameters using ALL relevant config
-        init_params = {
-            'model_name': model_name,
-            'progress_bar': not xtts_config.get('verbose', True),  # Hide progress if not verbose
-            'gpu': torch.cuda.is_available()
-        }
-        
-        # Add advanced initialization parameters from config
-        advanced_params = ['config_path', 'gpt_model_checkpoint', 'vocoder_checkpoint']
-        for param in advanced_params:
-            if param in xtts_config and xtts_config[param] is not None:
-                init_params[param] = xtts_config[param]
-                if xtts_config['verbose']:
-                    print(f"STATUS: Using {param}: {xtts_config[param]}")
-        
-        tts = TTS(**init_params)
-        
-        if xtts_config['verbose']:
-            print("STATUS: XTTS model loaded successfully")
-            print(f"STATUS: Sample rate: {xtts_config['sample_rate']}")
-            print(f"STATUS: Audio normalization: {xtts_config['normalize_audio']}")
-        
-        return tts
-        
-    except Exception as e:
-        print(f"❌ Failed to load XTTS model: {e}", file=sys.stderr)
-        return None
-
-def process_xtts_chunks_with_reload(tts, chunks: List[str], output_dir: Path, xtts_config: Dict[str, Any]) -> List[str]:
-    """Process chunks with model reload logic and ALL config parameters"""
-    generated_files = []
-    retry_attempts = xtts_config['retry_attempts']
-    retry_delay = xtts_config['retry_delay']
-    reload_every = xtts_config['reload_model_every_chunks']
-    
-    full_audio = []
-    final_sample_rate = None
-    
-    # Save intermediate files if configured
-    if xtts_config['save_intermediate']:
-        intermediate_dir = output_dir / "intermediate"
-        intermediate_dir.mkdir(exist_ok=True)
-    
-    for i, chunk_text in enumerate(chunks):
-        chunk_num = i + 1
-        
-        if xtts_config['verbose']:
-            print(f"STATUS: Processing chunk {chunk_num}/{len(chunks)} ({len(chunk_text)} chars)")
-        
-        # Model reload logic
-        if reload_every > 0 and chunk_num > 1 and (chunk_num - 1) % reload_every == 0:
-            if xtts_config['verbose']:
-                print(f"STATUS: Reloading model after {reload_every} chunks")
-            tts = load_xtts_model(xtts_config)
-            if not tts:
-                print(f"❌ Model reload failed")
-                break
-        
-        # Reset state between chunks if configured
-        if xtts_config['reset_state_between_chunks'] and hasattr(tts, 'synthesizer'):
-            try:
-                if hasattr(tts.synthesizer, 'tts_model'):
-                    # Clear any cached states
-                    tts.synthesizer.tts_model.inference_cleanup()
-            except:
-                pass  # Not all models support this
-        
-        # Retry logic
-        success = False
-        for attempt in range(retry_attempts):
-            try:
-                start_time = time.time()
-                
-                # Generate audio with ALL parameters
-                audio_data, sample_rate = generate_xtts_audio_complete(tts, chunk_text, xtts_config)
-                
-                if audio_data is None:
-                    if attempt < retry_attempts - 1:
-                        if xtts_config['verbose']:
-                            print(f"WARNING: Attempt {attempt + 1} failed, retrying in {retry_delay}s")
-                        time.sleep(retry_delay)
-                        continue
-                    else:
-                        print(f"❌ All {retry_attempts} attempts failed for chunk {chunk_num}")
-                        if not xtts_config['ignore_errors']:
-                            return generated_files
-                        continue
-                
-                generation_time = time.time() - start_time
-                
-                # Convert to tensor and apply normalization if configured
-                if not isinstance(audio_data, torch.Tensor):
-                    audio_tensor = torch.tensor(audio_data, dtype=torch.float32)
-                else:
-                    audio_tensor = audio_data
-                
-                if audio_tensor.dim() == 1:
-                    audio_tensor = audio_tensor.unsqueeze(0)
-                
-                # Apply normalization if configured
-                if xtts_config['normalize_audio']:
-                    max_val = torch.max(torch.abs(audio_tensor))
-                    if max_val > 0:
-                        audio_tensor = audio_tensor / max_val * 0.95
-                
-                # Save intermediate file if configured
-                if xtts_config['save_intermediate']:
-                    intermediate_file = intermediate_dir / f"chunk_{chunk_num:03d}.wav"
-                    torchaudio.save(str(intermediate_file), audio_tensor.cpu(), sample_rate)
-                
-                full_audio.append(audio_tensor)
-                
-                # Add smart silence gap using ALL gap parameters
-                if i < len(chunks) - 1:
-                    next_chunk = chunks[i + 1] if i + 1 < len(chunks) else None
-                    silence_duration = determine_gap_type_complete(chunk_text, next_chunk, xtts_config)
-                    
-                    silence_samples = int(silence_duration * sample_rate)
-                    silence = torch.zeros((1, silence_samples), dtype=torch.float32)
-                    full_audio.append(silence)
-                
-                final_sample_rate = sample_rate
-                
-                if xtts_config['verbose']:
-                    print(f"STATUS: Chunk {chunk_num} completed in {generation_time:.1f}s")
-                
-                success = True
-                break
-                
-            except Exception as e:
-                if attempt < retry_attempts - 1:
-                    if xtts_config['verbose']:
-                        print(f"ERROR: Attempt {attempt + 1} failed: {e}, retrying...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    print(f"❌ Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}")
-                    if xtts_config['debug']:
-                        import traceback
-                        traceback.print_exc()
-                    break
-        
-        if not success and not xtts_config['skip_failed_chunks']:
-            print(f"❌ Critical failure on chunk {chunk_num}")
-            break
-    
-    # Concatenate and save full audio using configured sample rate
-    if full_audio and final_sample_rate:
-        output_path = output_dir / "combined_xtts_output.wav"
-        final_waveform = torch.cat(full_audio, dim=1)
-        
-        # Use configured sample rate
-        save_sample_rate = xtts_config.get('sample_rate', final_sample_rate)
-        torchaudio.save(str(output_path), final_waveform.cpu(), save_sample_rate)
-        
-        if xtts_config['verbose']:
-            duration = final_waveform.shape[1] / save_sample_rate
-            print(f"STATUS: Full audio saved to {output_path} ({duration:.1f}s at {save_sample_rate}Hz)")
-        
-        generated_files.append(str(output_path))
-    
-    return generated_files
-
-def generate_xtts_audio_complete(tts, text: str, xtts_config: Dict[str, Any]):
-    """Generate audio using XTTS with ALL configuration parameters for entire section"""
-    try:
-        # Build generation parameters using ALL relevant config
-        base_params = {
-            'text': text,
-            'language': xtts_config['language']
-        }
-        
-        # Add speaker configuration
-        speaker_wav = xtts_config.get('speaker_wav')
-        if speaker_wav:
-            base_params['speaker_wav'] = speaker_wav
-        
-        # Add ALL XTTS generation parameters from config
-        generation_params = [
-            'speed', 'temperature', 'length_penalty', 'repetition_penalty',
-            'top_k', 'top_p', 'do_sample', 'num_beams', 'enable_text_splitting'
-        ]
-        
-        for param in generation_params:
-            if param in xtts_config and xtts_config[param] is not None:
-                base_params[param] = xtts_config[param]
-        
-        # Use dynamic parameter creation with function filtering
-        final_params = create_generation_params(
-            base_params, 
-            xtts_config, 
-            filter_function=tts.tts,
-            verbose=xtts_config.get('debug', False)
-        )
-        
-        if xtts_config.get('debug', False):
-            print(f"DEBUG: XTTS generation params: {final_params}")
-        
-        # Generate audio for entire section
-        wav = tts.tts(**final_params)
-        
-        # Get sample rate from config or model
-        sample_rate = xtts_config.get('sample_rate', 24000)
-        if hasattr(tts, 'synthesizer') and hasattr(tts.synthesizer, 'output_sample_rate'):
-            sample_rate = tts.synthesizer.output_sample_rate
-        
-        return wav, sample_rate
-        
-    except Exception as e:
-        if xtts_config.get('debug', False):
-            import traceback
-            traceback.print_exc()
-        print(f"❌ XTTS generation failed: {e}", file=sys.stderr)
-        return None, None
-
-def determine_gap_type_complete(current_chunk: str, next_chunk: str, xtts_config: Dict[str, Any]) -> float:
-    """Determine appropriate gap using ALL gap configuration parameters"""
-    current_text = current_chunk.strip()
-    
-    # Get ALL gap settings from config
-    gap_sentence = xtts_config['silence_gap_sentence']
-    gap_dramatic = xtts_config['silence_gap_dramatic'] 
-    gap_paragraph = xtts_config['silence_gap_paragraph']
-    
-    # Very short gaps for dialogue
-    if (current_text.endswith('"') or 
-        current_text.startswith('"') or
-        'said' in current_text.lower()[-20:] or
-        'replied' in current_text.lower()[-20:]):
-        return 0.3
-    
-    # Dramatic pauses for emphasis
-    if (current_text.endswith('...') or 
-        current_text.count('--') > 0 or
-        current_text.endswith('!') or
-        current_text.endswith('?')):
-        return gap_dramatic
-    
-    # Check for paragraph breaks and scene transitions
-    if next_chunk and current_text.endswith('.'):
-        next_start = next_chunk.strip()
-        
-        # Scene transition indicators
-        scene_indicators = ['meanwhile', 'later', 'suddenly', 'then', 'however', 
-                          'afterwards', 'next', 'finally', 'eventually']
-        
-        if (next_start.startswith('"') or 
-            any(word in next_start.lower()[:50] for word in scene_indicators) or
-            (len(next_start) > 0 and next_start[0].isupper())):
-            return gap_paragraph
-    
-    # Normal sentence ending
-    if current_text.endswith('.'):
-        return gap_sentence
-    
-    # Default short gap for other punctuation
-    return 0.3
 
 def register_xtts_engine():
     """Register XTTS engine"""

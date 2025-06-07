@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 F5 Engine - F5-TTS processor with natural speech synthesis
-UPDATED: Uses new section-based architecture with dynamic parameter loading
+UPDATED: Uses new section-based architecture with dynamic parameter loading and progress bar
 """
 
 import sys
 import time
+from core.progress_display_manager import log_status
 import torch # type: ignore
 from pathlib import Path
 from typing import List, Dict, Any
@@ -40,8 +41,8 @@ def find_companion_text_file(audio_file_path):
                 companion_text = f.read().strip()
             
             if companion_text:
-                print(f"STATUS: Found companion text file: {companion_text_path.name}", file=sys.stderr)
-                print(f"STATUS: Companion text ({len(companion_text)} chars): {companion_text[:100]}{'...' if len(companion_text) > 100 else ''}", file=sys.stderr)
+                log_status(f"Found companion text file: {companion_text_path.name}", file=sys.stderr)
+                log_status(f"Companion text ({len(companion_text)} chars): {companion_text[:100]}{'...' if len(companion_text) > 100 else ''}", file=sys.stderr)
                 return companion_text
             else:
                 print(f"WARNING: Companion text file is empty: {companion_text_path.name}", file=sys.stderr)
@@ -50,7 +51,7 @@ def find_companion_text_file(audio_file_path):
             print(f"WARNING: Could not read companion text file {companion_text_path.name}: {e}", file=sys.stderr)
             return ""
     
-    print(f"STATUS: No companion text file found for {audio_path.name}", file=sys.stderr)
+    log_status(f"No companion text file found for {audio_path.name}", file=sys.stderr)
     return ""
 
 def auto_detect_reference_audio_and_text(project_paths):
@@ -74,18 +75,18 @@ def auto_detect_reference_audio_and_text(project_paths):
             return None, ""
     
     if not samples_dir.exists():
-        print(f"STATUS: No samples directory found at {samples_dir}", file=sys.stderr)
+        log_status(f"No samples directory found at {samples_dir}", file=sys.stderr)
         return None, ""
     
     # Find first .wav file in samples directory
     wav_files = list(samples_dir.glob("*.wav"))
     if not wav_files:
-        print(f"STATUS: No .wav files found in {samples_dir}", file=sys.stderr)
+        log_status(f"No .wav files found in {samples_dir}", file=sys.stderr)
         return None, ""
     
     # Use first wav file found
     ref_audio = str(wav_files[0])
-    print(f"STATUS: Auto-detected reference audio: {wav_files[0].name}", file=sys.stderr)
+    log_status(f"Auto-detected reference audio: {wav_files[0].name}", file=sys.stderr)
     
     # Look for companion text file
     ref_text = find_companion_text_file(ref_audio)
@@ -94,12 +95,12 @@ def auto_detect_reference_audio_and_text(project_paths):
 
 def load_f5_model(f5_config):
     """Load F5-TTS model with configuration"""
-    print(f"STATUS: Loading F5 model", file=sys.stderr)
+    log_status(f"Loading F5 model", file=sys.stderr)
     
     try:
         # F5TTS() typically doesn't take model parameters in __init__
         # The model is specified during inference, not initialization
-        print(f"STATUS: Initializing F5TTS API (model will be set during inference)", file=sys.stderr)
+        log_status(f"Initializing F5TTS API (model will be set during inference)", file=sys.stderr)
         
         # Initialize F5TTS API with no parameters - model specified during inference
         f5tts = F5TTS()
@@ -166,20 +167,9 @@ def chunk_text_for_f5(text, f5_config):
 def generate_f5_audio_dynamic(f5tts, text, f5_config):
     """Generate audio using F5-TTS with dynamic configuration support"""
     try:
-        print(f"STATUS: Generating F5-TTS audio for {len(text)} characters", file=sys.stderr)
-        
         # Show reference info if available
         ref_file = f5_config.get('ref_audio') or f5_config.get('ref_file')
         ref_text = f5_config.get('ref_text', "")
-        
-        if ref_file:
-            print(f"STATUS: Using reference audio: {Path(ref_file).name}", file=sys.stderr)
-            if ref_text:
-                print(f"STATUS: Using reference text ({len(ref_text)} chars)", file=sys.stderr)
-            else:
-                print(f"STATUS: Using empty ref_text (auto-transcribe)", file=sys.stderr)
-        else:
-            print(f"STATUS: No reference audio, using default F5-TTS voice", file=sys.stderr)
         
         # Create base parameters
         base_params = {
@@ -198,11 +188,6 @@ def generate_f5_audio_dynamic(f5tts, text, f5_config):
             filter_function=f5tts.infer,
             verbose=f5_config.get('verbose', False)
         )
-        
-        # Show key parameters being used
-        if f5_config.get('verbose', False):
-            param_summary = {k: v for k, v in generation_params.items() if k not in ['gen_text', 'ref_text']}
-            print(f"STATUS: F5 generation params: {param_summary}", file=sys.stderr)
         
         # Generate audio with all valid parameters
         result = f5tts.infer(**generation_params)
@@ -274,7 +259,7 @@ def save_f5_audio_with_config(audio_data, sample_rate, output_path, f5_config):
         
         if f5_config.get('verbose', False):
             duration = waveform.shape[1] / final_sample_rate
-            print(f"STATUS: Saved F5 audio: {output_path.name} ({duration:.1f}s at {final_sample_rate}Hz)", file=sys.stderr)
+            log_status(f"Saved F5 audio: {output_path.name} ({duration:.1f}s at {final_sample_rate}Hz)", file=sys.stderr)
         
         return True
         
@@ -282,8 +267,88 @@ def save_f5_audio_with_config(audio_data, sample_rate, output_path, f5_config):
         print(f"ERROR: Failed to save F5 audio: {e}", file=sys.stderr)
         return False
 
+def _update_f5_progress_bar(completed: int, total: int, chunk_times: list):
+    """Update horizontal progress bar for F5 chunk processing"""
+    # Calculate progress percentage
+    if total == 0:
+        percent = 100
+    else:
+        percent = (completed / total) * 100
+    
+    # Calculate ETA
+    if completed == 0 or len(chunk_times) == 0:
+        eta_str = "calculating..."
+    elif completed >= total:
+        eta_str = "complete!"
+    else:
+        # Use average of recent chunk times for ETA
+        if len(chunk_times) >= 3:
+            recent_times = chunk_times[-3:]
+            avg_time = sum(recent_times) / len(recent_times)
+        else:
+            avg_time = sum(chunk_times) / len(chunk_times)
+        
+        remaining_chunks = total - completed
+        remaining_seconds = remaining_chunks * avg_time
+        
+        # Format ETA
+        if remaining_seconds < 60:
+            eta_str = f"{int(remaining_seconds)}s"
+        elif remaining_seconds < 3600:
+            minutes = int(remaining_seconds // 60)
+            seconds = int(remaining_seconds % 60)
+            eta_str = f"{minutes}m {seconds}s"
+        else:
+            hours = int(remaining_seconds // 3600)
+            minutes = int((remaining_seconds % 3600) // 60)
+            eta_str = f"{hours}h {minutes}m"
+    
+    # Get terminal width (default to 80 if can't detect)
+    try:
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns
+    except:
+        terminal_width = 80
+    
+    # Build the components separately to ensure no string corruption
+    prefix = "    🎭 F5: "
+    chunk_info = f"{completed}/{total} chunks"
+    percent_info = f"({percent:.0f}%)"
+    eta_info = f"ETA: {eta_str}"
+    
+    # Build suffix with proper spacing
+    suffix = f" {chunk_info} {percent_info} {eta_info}"
+    
+    # Calculate available space for the bar with generous padding
+    total_text_length = len(prefix) + len(suffix) + 2  # +2 for brackets []
+    available_width = terminal_width - total_text_length - 5  # -5 for extra safety
+    bar_width = max(5, min(30, available_width))  # Conservative bar width
+    
+    # Create progress bar
+    if total > 0:
+        filled_length = int(bar_width * completed // total)
+    else:
+        filled_length = bar_width
+    bar = '█' * filled_length + '░' * (bar_width - filled_length)
+    
+    # Build complete line
+    progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Final safety check - if still too long, truncate the bar more
+    while len(progress_line) > terminal_width - 2 and bar_width > 5:
+        bar_width -= 1
+        if total > 0:
+            filled_length = int(bar_width * completed // total)
+        else:
+            filled_length = bar_width
+        bar = '█' * filled_length + '░' * (bar_width - filled_length)
+        progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Clear the line first, then print the progress
+    print(f"\r{' ' * (terminal_width - 1)}\r{progress_line}", end='', flush=True)
+
 def process_f5_chunks_with_retry(f5tts, chunks, output_dir, f5_config):
-    """Process F5 chunks with retry logic and configuration"""
+    """Process F5 chunks with retry logic, configuration, and progress bar"""
     generated_files = []
     
     # Get retry configuration
@@ -292,63 +357,71 @@ def process_f5_chunks_with_retry(f5tts, chunks, output_dir, f5_config):
     ignore_errors = f5_config.get('ignore_errors', False)
     skip_failed_chunks = f5_config.get('skip_failed_chunks', False)
     
+    chunk_times = []  # Track timing for ETA
+    total_chunks = len(chunks)
+    
+    print(f"  📝 Processing {len(chunks)} chunks with F5-TTS...")
+    
+    # Print initial progress bar
+    _update_f5_progress_bar(0, total_chunks, chunk_times)
+    
     for i, chunk_text in enumerate(chunks):
         chunk_num = i + 1
+        chunk_start_time = time.time()
         output_file = output_dir / f"chunk_{chunk_num:03d}_f5.wav"
-        
-        print(f"STATUS: Processing F5 chunk {chunk_num}/{len(chunks)} ({len(chunk_text)} chars)", file=sys.stderr)
         
         # Retry logic
         success = False
         for attempt in range(retry_attempts):
             try:
-                start_time = time.time()
-                
                 # Generate audio with dynamic configuration
                 audio_data, sample_rate = generate_f5_audio_dynamic(f5tts, chunk_text, f5_config)
                 
                 if audio_data is None:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: F5 attempt {attempt + 1} failed, retrying in {retry_delay}s", file=sys.stderr)
                         time.sleep(retry_delay)
                         continue
                     else:
-                        print(f"ERROR: All {retry_attempts} F5 attempts failed for chunk {chunk_num}", file=sys.stderr)
+                        print(f"\n    ❌ All {retry_attempts} F5 attempts failed for chunk {chunk_num}")
                         if not ignore_errors:
                             break
                         continue
                 
-                generation_time = time.time() - start_time
-                
                 # Save audio with configuration
                 if save_f5_audio_with_config(audio_data, sample_rate, output_file, f5_config):
                     generated_files.append(str(output_file))
-                    print(f"STATUS: F5 chunk {chunk_num} completed in {generation_time:.1f}s", file=sys.stderr)
                     success = True
                     break
                 else:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: F5 save failed, retrying...", file=sys.stderr)
                         time.sleep(retry_delay)
                         continue
                     else:
-                        print(f"ERROR: Failed to save F5 chunk {chunk_num} after {retry_attempts} attempts", file=sys.stderr)
+                        print(f"\n    ❌ Failed to save F5 chunk {chunk_num} after {retry_attempts} attempts")
                 
             except Exception as e:
                 if attempt < retry_attempts - 1:
-                    print(f"ERROR: F5 attempt {attempt + 1} failed: {e}, retrying...", file=sys.stderr)
                     time.sleep(retry_delay)
                     continue
                 else:
-                    print(f"ERROR: Failed to process F5 chunk {chunk_num} after {retry_attempts} attempts: {e}", file=sys.stderr)
+                    print(f"\n    ❌ Failed to process F5 chunk {chunk_num} after {retry_attempts} attempts: {e}")
                     if f5_config.get('debug_output', False):
                         import traceback
                         traceback.print_exc(file=sys.stderr)
                     break
         
         if not success and not skip_failed_chunks:
-            print(f"ERROR: Critical F5 failure on chunk {chunk_num}", file=sys.stderr)
+            print(f"\n    ❌ Critical F5 failure on chunk {chunk_num}")
             break
+        
+        # Record completion time and update progress bar
+        chunk_duration = time.time() - chunk_start_time
+        chunk_times.append(chunk_duration)
+        _update_f5_progress_bar(chunk_num, total_chunks, chunk_times)
+    
+    # Clear progress bar and show completion
+    print()  # New line after progress bar
+    print("    ✅ All chunks processed")
     
     return generated_files
 
@@ -370,15 +443,15 @@ def process_f5_text_file(text_file: str, output_dir: str, config: Dict[str, Any]
             print(f"ERROR: Missing required F5 configuration: {', '.join(missing_params)}", file=sys.stderr)
             return []
         
-        print(f"STATUS: Starting F5-TTS processing", file=sys.stderr)
-        print(f"STATUS: Model: {f5_config['model_name']}", file=sys.stderr)
-        print(f"STATUS: Speed: {f5_config['speed']}x", file=sys.stderr)
+        log_status(f"Starting F5-TTS processing", file=sys.stderr)
+        log_status(f"Model: {f5_config['model_name']}", file=sys.stderr)
+        log_status(f"Speed: {f5_config['speed']}x", file=sys.stderr)
         
         # Show important F5 parameters
         important_params = ['cfg_strength', 'nfe_step', 'sway_sampling_coef', 'seed']
         param_values = {k: f5_config[k] for k in important_params if k in f5_config}
         if param_values:
-            print(f"STATUS: F5 parameters: {param_values}", file=sys.stderr)
+            log_status(f"F5 parameters: {param_values}", file=sys.stderr)
         
         # Auto-detect reference audio and companion text if not explicitly set
         ref_audio = f5_config.get('ref_audio')
@@ -390,9 +463,9 @@ def process_f5_text_file(text_file: str, output_dir: str, config: Dict[str, Any]
             if detected_audio:
                 f5_config['ref_audio'] = detected_audio
                 f5_config['ref_text'] = detected_text if detected_text else ""
-                print(f"STATUS: Auto-detected reference audio for F5", file=sys.stderr)
+                log_status(f"Auto-detected reference audio for F5", file=sys.stderr)
             else:
-                print(f"STATUS: No reference audio found, using default F5 voice", file=sys.stderr)
+                log_status(f"No reference audio found, using default F5 voice", file=sys.stderr)
         else:
             # If ref_audio is explicitly set, check for companion text
             if not ref_text:  # Only auto-detect if ref_text is not explicitly set
@@ -401,11 +474,11 @@ def process_f5_text_file(text_file: str, output_dir: str, config: Dict[str, Any]
         
         # Show final voice configuration
         if f5_config.get('ref_audio'):
-            print(f"STATUS: Using voice cloning with {Path(f5_config['ref_audio']).name}", file=sys.stderr)
+            log_status(f"Using voice cloning with {Path(f5_config['ref_audio']).name}", file=sys.stderr)
             if f5_config.get('ref_text'):
-                print(f"STATUS: Reference text: {f5_config['ref_text'][:50]}{'...' if len(f5_config['ref_text']) > 50 else ''}", file=sys.stderr)
+                log_status(f"Reference text: {f5_config['ref_text'][:50]}{'...' if len(f5_config['ref_text']) > 50 else ''}", file=sys.stderr)
             else:
-                print(f"STATUS: Will auto-transcribe reference audio", file=sys.stderr)
+                log_status(f"Will auto-transcribe reference audio", file=sys.stderr)
         else:
             print("STATUS: No reference audio, using default F5-TTS voice", file=sys.stderr)
         
@@ -431,14 +504,14 @@ def process_f5_text_file(text_file: str, output_dir: str, config: Dict[str, Any]
         
         if use_chunking:
             # Process in chunks
-            print(f"STATUS: Text length ({len(text)} chars) exceeds chunk limit, using chunked processing", file=sys.stderr)
+            log_status(f"Text length ({len(text)} chars) exceeds chunk limit, using chunked processing", file=sys.stderr)
             chunks = chunk_text_for_f5(text, f5_config)
-            print(f"STATUS: Created {len(chunks)} chunks for F5-TTS", file=sys.stderr)
+            log_status(f"Created {len(chunks)} chunks for F5-TTS", file=sys.stderr)
             
             generated_files = process_f5_chunks_with_retry(f5tts, chunks, output_dir, f5_config)
         else:
             # Process entire text as single chunk
-            print(f"STATUS: Processing entire text as single F5-TTS generation", file=sys.stderr)
+            log_status(f"Processing entire text as single F5-TTS generation", file=sys.stderr)
             output_file = output_dir / "complete_f5.wav"
             
             try:
@@ -452,7 +525,7 @@ def process_f5_text_file(text_file: str, output_dir: str, config: Dict[str, Any]
                 if audio_data is not None:
                     # Save audio using configuration
                     if save_f5_audio_with_config(audio_data, sample_rate, output_file, f5_config):
-                        print(f"STATUS: Complete F5 audio generated in {generation_time:.1f}s", file=sys.stderr)
+                        log_status(f"Complete F5 audio generated in {generation_time:.1f}s", file=sys.stderr)
                         generated_files = [str(output_file)]
                     else:
                         print(f"ERROR: Failed to save complete F5 audio", file=sys.stderr)
@@ -471,10 +544,10 @@ def process_f5_text_file(text_file: str, output_dir: str, config: Dict[str, Any]
         # Final statistics
         if use_chunking:
             success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
-            print(f"STATUS: F5-TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
+            log_status(f"F5-TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
         else:
             success = len(generated_files) > 0
-            print(f"STATUS: F5-TTS processing completed: {'Success' if success else 'Failed'}", file=sys.stderr)
+            log_status(f"F5-TTS processing completed: {'Success' if success else 'Failed'}", file=sys.stderr)
         
         if len(generated_files) == 0:
             print(f"ERROR: No F5 audio files were generated successfully", file=sys.stderr)

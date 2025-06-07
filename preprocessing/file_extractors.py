@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
 File Extractors - Unified text extraction from PDF, EPUB, and TXT files
+FIXED: Added proper imports
 """
 
 import sys
+import re
 from pathlib import Path
 from typing import Optional, List
+from core.progress_display_manager import log_info, log_status
 
 def extract_text(file_path: str, sections: Optional[List[int]] = None, config: dict = None) -> str:
     """Main entry point - extract text from any supported file"""
@@ -92,7 +95,7 @@ def extract_from_epub(file_path: Path, sections: Optional[List[int]] = None) -> 
                 extracted_text.append(text)
                 
         except Exception as e:
-            print(f"Warning: Could not extract text from section: {e}")
+            log_info(f"Warning: Could not extract text from section: {e}")
             continue
     
     if not extracted_text:
@@ -126,11 +129,11 @@ def extract_from_pdf(file_path: Path, sections: Optional[List[int]] = None, conf
             
             if chapters and len(chapters) > 1:
                 # Use chapters
-                print(f"STATUS: PDF has {len(chapters)} chapters, using chapter-based extraction", file=sys.stderr)
+                log_status(f"PDF has {len(chapters)} chapters, using chapter-based extraction")
                 page_indices = _get_pages_from_chapters(chapters, sections)
             else:
                 # Use page numbers directly
-                print(f"STATUS: Using page-based extraction", file=sys.stderr)
+                log_status("Using page-based extraction")
                 if max(sections) > total_pages:
                     doc.close()
                     raise ValueError(f"Page {max(sections)} not found. Available: 1-{total_pages}")
@@ -153,7 +156,7 @@ def extract_from_pdf(file_path: Path, sections: Optional[List[int]] = None, conf
                         extracted_text.append(text)
                         
             except Exception as e:
-                print(f"Warning: Could not extract text from page {page_idx + 1}: {e}", file=sys.stderr)
+                log_info(f"Warning: Could not extract text from page {page_idx + 1}")
                 continue
         
         doc.close()
@@ -162,7 +165,7 @@ def extract_from_pdf(file_path: Path, sections: Optional[List[int]] = None, conf
             raise ValueError("No text content extracted from PDF")
         
         result = ' '.join(extracted_text)
-        print(f"STATUS: Extracted {len(result.split()):,} words from PDF", file=sys.stderr)
+        log_status(f"Extracted {len(result.split()):,} words from PDF")
         return result
         
     except Exception as e:
@@ -246,6 +249,3 @@ def _clean_pdf_text(text: str) -> str:
         cleaned_lines.append(line)
     
     return ' '.join(cleaned_lines).strip()
-
-# Import re at the top
-import re

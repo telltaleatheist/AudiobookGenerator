@@ -7,6 +7,7 @@ All engines must implement this interface and use config_manager pattern
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Dict, Any
+from core.progress_display_manager import log_info
 from managers.config_manager import ConfigManager, ConfigError
 
 class BaseTTSEngine(ABC):
@@ -50,14 +51,6 @@ def extract_engine_config(config: Dict[str, Any], engine_name: str, verbose: boo
     """Extract engine-specific configuration with validation"""
     try:
         engine_config = config[engine_name]
-        
-        if verbose:
-            non_null_params = [(k, v) for k, v in engine_config.items() if v is not None]
-            if non_null_params:
-                print(f"STATUS: {engine_name.upper()} active parameters:")
-                for key, value in non_null_params:
-                    print(f"  {key}: {value}")
-        
         return engine_config
         
     except KeyError:
@@ -102,13 +95,13 @@ def filter_params_for_function(params: Dict[str, Any], func, verbose: bool = Fal
         if verbose:
             removed = set(params.keys()) - valid_params
             if removed:
-                print(f"DEBUG: Filtered out unsupported params: {removed}")
+                log_info("DEBUG: Filtered out unsupported params: {removed}")
         
         return filtered
         
     except Exception as e:
         if verbose:
-            print(f"DEBUG: Could not filter parameters: {e}")
+            log_info("DEBUG: Could not filter parameters: {e}")
         return params
 
 # Registry for available engines
@@ -117,7 +110,6 @@ _ENGINES = {}
 def register_engine(name: str, processor_func):
     """Register a TTS engine processor function"""
     _ENGINES[name] = processor_func
-    print(f"STATUS: Registered TTS engine: {name}")
 
 def get_available_engines() -> List[str]:
     """Get list of available engine names"""

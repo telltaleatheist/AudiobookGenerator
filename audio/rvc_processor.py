@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-RVC Processor - Simplified audio processing without splitting logic
-Processes complete sections through RVC conversion
+RVC Processor - CLEANED: Simplified audio processing without verbose commands
+FIXED: Added proper imports and string formatting
 """
 
 import sys
@@ -9,11 +9,16 @@ import subprocess
 import os
 import tempfile
 import shutil
+import warnings
 from pathlib import Path
+from core.progress_display_manager import log_error, log_info, print_above_progress
 from managers.config_manager import ConfigManager, ConfigError
 
+# Suppress warnings that interfere with progress bars
+warnings.filterwarnings("ignore")
+
 def process_audio_through_rvc(input_file: str, output_file: str, config: dict) -> bool:
-    """Process audio through RVC conversion - simplified for section-based pipeline"""
+    """Process audio through RVC conversion - CLEANED: Less verbose output"""
     
     input_path = Path(input_file)
     output_path = Path(output_file)
@@ -21,7 +26,7 @@ def process_audio_through_rvc(input_file: str, output_file: str, config: dict) -
     try:
         # Get RVC voice from metadata
         rvc_voice = config['metadata']['rvc_voice']
-        print(f"STATUS: RVC processing with voice: {rvc_voice}", file=sys.stderr)
+        # CLEANED: Remove verbose voice processing message
         
         # Get voice-specific config
         rvc_voice_key = f'rvc_{rvc_voice}'
@@ -41,7 +46,7 @@ def process_audio_through_rvc(input_file: str, output_file: str, config: dict) -
             if setting not in rvc_config:
                 raise ConfigError(f"Missing required RVC setting: {setting}")
         
-        print(f"STATUS: RVC model: {rvc_config['model']}", file=sys.stderr)
+        # CLEANED: Remove verbose model message
         
         # Create output directory
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,21 +55,21 @@ def process_audio_through_rvc(input_file: str, output_file: str, config: dict) -
         success = _run_rvc_conversion(input_path, output_path, rvc_config)
         
         if success:
-            print(f"STATUS: RVC processing completed: {output_path.name}", file=sys.stderr)
+            # CLEANED: Remove verbose completion message
             return True
         else:
-            print(f"❌ RVC processing failed", file=sys.stderr)
+            print_above_progress("RVC processing failed", "error")
             return False
             
     except ConfigError as e:
-        print(f"❌ RVC Configuration Error: {e}", file=sys.stderr)
+        log_info(f"RVC Configuration Error: {e}", "error")
         return False
     except Exception as e:
-        print(f"❌ RVC processing error: {e}", file=sys.stderr)
+        log_error("RVC processing error")
         return False
 
 def _run_rvc_conversion(input_path: Path, output_path: Path, rvc_config: dict) -> bool:
-    """Run the actual RVC conversion"""
+    """Run the actual RVC conversion - CLEANED: No command echo"""
     
     # Create temporary directory for RVC processing
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -111,7 +116,7 @@ def _run_rvc_conversion(input_path: Path, output_path: Path, rvc_config: dict) -
             if 'autotune_strength' in rvc_config:
                 cmd.extend(["--autotune-strength", str(rvc_config['autotune_strength'])])
         
-        print(f"STATUS: Running RVC command: {' '.join(cmd)}", file=sys.stderr)
+        # CLEANED: Remove command echo - too verbose
         
         try:
             # Set up environment
@@ -131,7 +136,7 @@ def _run_rvc_conversion(input_path: Path, output_path: Path, rvc_config: dict) -
             rvc_output = _find_rvc_output_file(temp_path, input_path.stem)
             
             if not rvc_output:
-                print(f"❌ Could not find RVC output file in {temp_path}", file=sys.stderr)
+                log_error("Could not find RVC output file")
                 return False
             
             # Apply post-processing
@@ -143,12 +148,12 @@ def _run_rvc_conversion(input_path: Path, output_path: Path, rvc_config: dict) -
             return True
             
         except subprocess.CalledProcessError as e:
-            print(f"❌ RVC conversion failed: {e}", file=sys.stderr)
+            log_info(f"RVC conversion failed: {e}", "error")
             if e.stderr:
-                print(f"RVC Error: {e.stderr}", file=sys.stderr)
+                log_info("RVC Error")
             return False
         except FileNotFoundError:
-            print(f"❌ RVC command 'urvc' not found. Make sure RVC is installed and in PATH", file=sys.stderr)
+            print_above_progress("RVC command 'urvc' not found. Make sure RVC is installed and in PATH", "error")
             return False
 
 def _find_rvc_output_file(output_dir: Path, base_name: str) -> Path:
@@ -197,8 +202,8 @@ def _apply_speed_adjustment(input_file: Path, output_file: Path, speed_factor: f
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ Speed adjustment failed: {e}", file=sys.stderr)
+        log_error("Speed adjustment failed")
         return False
     except FileNotFoundError:
-        print(f"❌ ffmpeg not found", file=sys.stderr)
+        log_error("ffmpeg not found")
         return False

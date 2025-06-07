@@ -10,6 +10,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from core.progress_display_manager import log_error
+
 def format_duration(seconds: float) -> str:
     """Format duration in seconds to HH:MM:SS.MS format"""
     ms = int((seconds - int(seconds)) * 100)
@@ -31,7 +33,7 @@ def safe_file_operation(operation, file_path: Path, *args, **kwargs):
     try:
         return operation(file_path, *args, **kwargs)
     except Exception as e:
-        print(f"❌ File operation failed on {file_path}: {e}", file=sys.stderr)
+        log_error(f"File operation failed on {file_path}")
         return None
 
 def ensure_directory(path: Path) -> bool:
@@ -40,7 +42,7 @@ def ensure_directory(path: Path) -> bool:
         path.mkdir(parents=True, exist_ok=True)
         return True
     except Exception as e:
-        print(f"❌ Could not create directory {path}: {e}", file=sys.stderr)
+        log_error(f"Could not create directory {path}")
         return False
 
 def load_json_file(file_path: Path) -> Optional[Dict[str, Any]]:
@@ -49,7 +51,7 @@ def load_json_file(file_path: Path) -> Optional[Dict[str, Any]]:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"❌ Could not load JSON file {file_path}: {e}", file=sys.stderr)
+        log_error(f"Could not load JSON file {file_path}")
         return None
 
 def save_json_file(data: Dict[str, Any], file_path: Path) -> bool:
@@ -60,7 +62,7 @@ def save_json_file(data: Dict[str, Any], file_path: Path) -> bool:
             json.dump(data, f, indent=2)
         return True
     except Exception as e:
-        print(f"❌ Could not save JSON file {file_path}: {e}", file=sys.stderr)
+        log_error(f"Could not save JSON file {file_path}")
         return False
 
 def get_file_size_mb(file_path: Path) -> float:
@@ -98,7 +100,7 @@ def log_to_file(message: str, log_file: Path, timestamp: bool = True):
             else:
                 f.write(f"{message}\n")
     except Exception as e:
-        print(f"❌ Could not write to log file {log_file}: {e}", file=sys.stderr)
+        log_error(f"Could not write to log file {log_file}")
 
 def estimate_words_per_minute(text: str, wpm: int = 150) -> float:
     """Estimate reading time in minutes based on word count"""

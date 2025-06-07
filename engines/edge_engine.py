@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Edge Engine - Free EdgeTTS processor (command-line version)
-UPDATED: Uses new section-based architecture with dynamic parameter loading
+UPDATED: Uses new section-based architecture with dynamic parameter loading and progress bar
 """
 
 import sys
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 # Import dynamic utilities from engine registry
+from core.progress_display_manager import log_status
 from engines.base_engine import (
     extract_engine_config, 
     filter_params_for_function,
@@ -121,8 +122,6 @@ def apply_edge_text_preprocessing(text, edge_config):
 async def generate_edge_audio_dynamic(text, edge_config):
     """Generate audio using free EdgeTTS with dynamic configuration"""
     try:
-        print(f"STATUS: Generating audio for {len(text)} characters with EdgeTTS", file=sys.stderr)
-        
         # Validate text
         if not text or not text.strip():
             print(f"ERROR: Empty text provided to EdgeTTS", file=sys.stderr)
@@ -142,7 +141,6 @@ async def generate_edge_audio_dynamic(text, edge_config):
         for param in free_edge_params:
             if param in edge_config and edge_config[param] is not None:
                 communicate_params[param] = edge_config[param]
-                print(f"STATUS: Using EdgeTTS {param}: {edge_config[param]}", file=sys.stderr)
         
         # Create communicate object with filtered parameters
         valid_params = filter_params_for_function(communicate_params, edge_tts.Communicate.__init__, verbose=edge_config.get('debug_output', False))
@@ -153,24 +151,14 @@ async def generate_edge_audio_dynamic(text, edge_config):
         
         communicate = edge_tts.Communicate(**valid_params)
         
-        if edge_config.get('verbose', False):
-            print(f"STATUS: Created EdgeTTS communicate object", file=sys.stderr)
-        
         # Collect audio data
         audio_data = b""
         chunk_count = 0
-        
-        # Handle streaming if configured (free version supports this)
-        if edge_config.get('streaming', False):
-            print(f"STATUS: Using streaming generation", file=sys.stderr)
         
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 audio_data += chunk["data"]
                 chunk_count += 1
-        
-        if edge_config.get('verbose', False):
-            print(f"STATUS: Received {chunk_count} audio chunks, total size: {len(audio_data)} bytes", file=sys.stderr)
         
         if len(audio_data) == 0:
             print(f"ERROR: No audio data received from EdgeTTS", file=sys.stderr)
@@ -212,15 +200,12 @@ def save_edge_audio_dynamic(audio_data, output_path, edge_config):
             
             if result.returncode == 0:
                 temp_mp3.unlink()  # Remove temp MP3
-                print(f"STATUS: Converted MP3 to WAV: {output_path.name}", file=sys.stderr)
             else:
                 # If conversion fails, rename MP3 to final name
                 temp_mp3.rename(output_path.with_suffix('.mp3'))
-                print(f"STATUS: Saved as MP3 (ffmpeg conversion failed): {output_path.with_suffix('.mp3').name}", file=sys.stderr)
         except FileNotFoundError:
             # ffmpeg not available, rename MP3 to final name
             temp_mp3.rename(output_path.with_suffix('.mp3'))
-            print(f"STATUS: Saved as MP3 (ffmpeg not available): {output_path.with_suffix('.mp3').name}", file=sys.stderr)
         
         return True
         
@@ -228,8 +213,88 @@ def save_edge_audio_dynamic(audio_data, output_path, edge_config):
         print(f"ERROR: Failed to save audio to {output_path}: {e}", file=sys.stderr)
         return False
 
+def _update_edge_progress_bar(completed: int, total: int, chunk_times: list):
+    """Update horizontal progress bar for Edge chunk processing"""
+    # Calculate progress percentage
+    if total == 0:
+        percent = 100
+    else:
+        percent = (completed / total) * 100
+    
+    # Calculate ETA
+    if completed == 0 or len(chunk_times) == 0:
+        eta_str = "calculating..."
+    elif completed >= total:
+        eta_str = "complete!"
+    else:
+        # Use average of recent chunk times for ETA
+        if len(chunk_times) >= 3:
+            recent_times = chunk_times[-3:]
+            avg_time = sum(recent_times) / len(recent_times)
+        else:
+            avg_time = sum(chunk_times) / len(chunk_times)
+        
+        remaining_chunks = total - completed
+        remaining_seconds = remaining_chunks * avg_time
+        
+        # Format ETA
+        if remaining_seconds < 60:
+            eta_str = f"{int(remaining_seconds)}s"
+        elif remaining_seconds < 3600:
+            minutes = int(remaining_seconds // 60)
+            seconds = int(remaining_seconds % 60)
+            eta_str = f"{minutes}m {seconds}s"
+        else:
+            hours = int(remaining_seconds // 3600)
+            minutes = int((remaining_seconds % 3600) // 60)
+            eta_str = f"{hours}h {minutes}m"
+    
+    # Get terminal width (default to 80 if can't detect)
+    try:
+        import shutil
+        terminal_width = shutil.get_terminal_size().columns
+    except:
+        terminal_width = 80
+    
+    # Build the components separately to ensure no string corruption
+    prefix = "    🌐 Edge: "
+    chunk_info = f"{completed}/{total} chunks"
+    percent_info = f"({percent:.0f}%)"
+    eta_info = f"ETA: {eta_str}"
+    
+    # Build suffix with proper spacing
+    suffix = f" {chunk_info} {percent_info} {eta_info}"
+    
+    # Calculate available space for the bar with generous padding
+    total_text_length = len(prefix) + len(suffix) + 2  # +2 for brackets []
+    available_width = terminal_width - total_text_length - 5  # -5 for extra safety
+    bar_width = max(5, min(30, available_width))  # Conservative bar width
+    
+    # Create progress bar
+    if total > 0:
+        filled_length = int(bar_width * completed // total)
+    else:
+        filled_length = bar_width
+    bar = '█' * filled_length + '░' * (bar_width - filled_length)
+    
+    # Build complete line
+    progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Final safety check - if still too long, truncate the bar more
+    while len(progress_line) > terminal_width - 2 and bar_width > 5:
+        bar_width -= 1
+        if total > 0:
+            filled_length = int(bar_width * completed // total)
+        else:
+            filled_length = bar_width
+        bar = '█' * filled_length + '░' * (bar_width - filled_length)
+        progress_line = f"{prefix}[{bar}]{suffix}"
+    
+    # Clear the line first, then print the progress
+    print(f"\r{' ' * (terminal_width - 1)}\r{progress_line}", end='', flush=True)
+
 async def process_edge_chunks_async_dynamic(chunks, output_dir, edge_config):
-    """Process chunks with EdgeTTS asynchronously with dynamic retry logic"""
+    """Process chunks with EdgeTTS asynchronously with dynamic retry logic and progress bar"""
     generated_files = []
     
     # Get retry settings from config
@@ -239,69 +304,75 @@ async def process_edge_chunks_async_dynamic(chunks, output_dir, edge_config):
     ignore_errors = edge_config.get('ignore_errors', False)
     skip_failed_chunks = edge_config.get('skip_failed_chunks', False)
     
+    chunk_times = []  # Track timing for ETA
+    total_chunks = len(chunks)
+    
+    print(f"  📝 Processing {len(chunks)} chunks with EdgeTTS...")
+    
+    # Print initial progress bar
+    _update_edge_progress_bar(0, total_chunks, chunk_times)
+    
     for i, chunk_text in enumerate(chunks):
         chunk_num = i + 1
+        chunk_start_time = time.time()
         output_file = output_dir / f"chunk_{chunk_num:03d}_edge.wav"
-        
-        print(f"STATUS: Processing chunk {chunk_num}/{len(chunks)} ({len(chunk_text)} chars)", file=sys.stderr)
         
         # Retry logic
         success = False
         for attempt in range(retry_attempts):
             try:
-                start_time = time.time()
-                
                 # Generate audio with dynamic config
                 audio_data = await generate_edge_audio_dynamic(chunk_text, edge_config)
                 
                 if audio_data is None:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: Attempt {attempt + 1} failed, retrying in {retry_delay}s", file=sys.stderr)
                         await asyncio.sleep(retry_delay)
                         continue
                     else:
-                        print(f"ERROR: All {retry_attempts} attempts failed for chunk {chunk_num}", file=sys.stderr)
+                        print(f"\n    ❌ All {retry_attempts} attempts failed for chunk {chunk_num}")
                         if not ignore_errors:
                             break
                         continue
                 
-                generation_time = time.time() - start_time
-                
                 # Save audio with dynamic config
                 if save_edge_audio_dynamic(audio_data, output_file, edge_config):
                     generated_files.append(str(output_file))
-                    print(f"STATUS: Chunk {chunk_num} completed in {generation_time:.1f}s", file=sys.stderr)
                     success = True
                     break
                 else:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: Save failed, retrying...", file=sys.stderr)
                         await asyncio.sleep(retry_delay)
                         continue
                     else:
-                        print(f"ERROR: Failed to save chunk {chunk_num} after {retry_attempts} attempts", file=sys.stderr)
+                        print(f"\n    ❌ Failed to save chunk {chunk_num} after {retry_attempts} attempts")
                 
             except Exception as e:
                 if attempt < retry_attempts - 1:
-                    print(f"ERROR: Attempt {attempt + 1} failed: {e}, retrying...", file=sys.stderr)
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
-                    print(f"ERROR: Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}", file=sys.stderr)
+                    print(f"\n    ❌ Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}")
                     if edge_config.get('debug_output', False):
                         import traceback
                         traceback.print_exc(file=sys.stderr)
                     break
         
         if not success and not skip_failed_chunks:
-            print(f"ERROR: Critical failure on chunk {chunk_num}", file=sys.stderr)
+            print(f"\n    ❌ Critical failure on chunk {chunk_num}")
             break
+        
+        # Record completion time and update progress bar
+        chunk_duration = time.time() - chunk_start_time
+        chunk_times.append(chunk_duration)
+        _update_edge_progress_bar(chunk_num, total_chunks, chunk_times)
         
         # Add delay between chunks to avoid throttling (except for last chunk)
         if i < len(chunks) - 1 and delay_between_chunks > 0:
-            if edge_config.get('verbose', False):
-                print(f"STATUS: Waiting {delay_between_chunks}s before next chunk", file=sys.stderr)
             await asyncio.sleep(delay_between_chunks)
+    
+    # Clear progress bar and show completion
+    print()  # New line after progress bar
+    print("    ✅ All chunks processed")
     
     return generated_files
 
@@ -313,13 +384,13 @@ def test_edge_voice_dynamic(voice_name, edge_config):
             available_voices = [v["Name"] for v in voices]
             
             if edge_config.get('verbose', False):
-                print(f"STATUS: Found {len(available_voices)} total voices", file=sys.stderr)
+                log_status(f"Found {len(available_voices)} total voices", file=sys.stderr)
             
             # Check if the requested voice exists
             voice_exists = voice_name in available_voices
             
             if edge_config.get('verbose', False):
-                print(f"STATUS: Voice '{voice_name}' exists: {voice_exists}", file=sys.stderr)
+                log_status(f"Voice '{voice_name}' exists: {voice_exists}", file=sys.stderr)
             
             # Get language-specific voices for fallback
             lang_prefix = voice_name.split('-')[0:2]  # e.g., ['en', 'US']
@@ -330,7 +401,7 @@ def test_edge_voice_dynamic(voice_name, edge_config):
                 lang_voices = [v for v in available_voices if v.startswith('en-')]
             
             if edge_config.get('verbose', False):
-                print(f"STATUS: Found {len(lang_voices)} voices for language pattern", file=sys.stderr)
+                log_status(f"Found {len(lang_voices)} voices for language pattern", file=sys.stderr)
             
             return voice_exists, lang_voices, available_voices
             
@@ -361,14 +432,14 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
             print(f"ERROR: Missing required EdgeTTS configuration: {', '.join(missing_params)}", file=sys.stderr)
             return []
         
-        print(f"STATUS: Starting EdgeTTS processing (free version)", file=sys.stderr)
-        print(f"STATUS: Voice: {edge_config['voice']}", file=sys.stderr)
+        log_status(f"Starting EdgeTTS processing (free version)", file=sys.stderr)
+        log_status(f"Voice: {edge_config['voice']}", file=sys.stderr)
         
         # Show free EdgeTTS parameters
         rate = edge_config.get('rate', '+0%')
         pitch = edge_config.get('pitch', '+0Hz')
         volume = edge_config.get('volume', '+0%')
-        print(f"STATUS: Rate: {rate}, Pitch: {pitch}, Volume: {volume}", file=sys.stderr)
+        log_status(f"Rate: {rate}, Pitch: {pitch}, Volume: {volume}", file=sys.stderr)
         
         # Display configured features (only those supported by free version)
         free_features = []
@@ -382,11 +453,11 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
             free_features.append(f"retry x{edge_config['retry_attempts']}")
         
         if free_features:
-            print(f"STATUS: Free EdgeTTS features: {', '.join(free_features)}", file=sys.stderr)
+            log_status(f"Free EdgeTTS features: {', '.join(free_features)}", file=sys.stderr)
         
         # Test voice availability with enhanced checking
         voice_name = edge_config['voice']
-        print(f"STATUS: Validating voice availability", file=sys.stderr)
+        log_status(f"Validating voice availability", file=sys.stderr)
         voice_available, lang_voices, all_voices = test_edge_voice_dynamic(voice_name, edge_config)
         
         if not voice_available:
@@ -395,15 +466,15 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
             # Check for fallback voice
             fallback_voice = edge_config.get('fallback_voice')
             if fallback_voice and fallback_voice in all_voices:
-                print(f"STATUS: Using fallback voice: {fallback_voice}", file=sys.stderr)
+                log_status(f"Using fallback voice: {fallback_voice}", file=sys.stderr)
                 edge_config['voice'] = fallback_voice
             elif lang_voices:
-                print(f"STATUS: Available voices for language: {lang_voices[:3]}", file=sys.stderr)
-                print(f"STATUS: Proceeding with {voice_name} anyway", file=sys.stderr)
+                log_status(f"Available voices for language: {lang_voices[:3]}", file=sys.stderr)
+                log_status(f"Proceeding with {voice_name} anyway", file=sys.stderr)
             else:
                 print(f"ERROR: Could not find suitable voice, but proceeding anyway", file=sys.stderr)
         else:
-            print(f"STATUS: Voice {voice_name} confirmed available", file=sys.stderr)
+            log_status(f"Voice {voice_name} confirmed available", file=sys.stderr)
         
         # Read clean text (already processed in preprocessing)
         try:
@@ -411,7 +482,7 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
                 text = f.read().strip()
             
             if edge_config.get('verbose', False):
-                print(f"STATUS: Read {len(text)} characters from {text_file}", file=sys.stderr)
+                log_status(f"Read {len(text)} characters from {text_file}", file=sys.stderr)
             
             if not text:
                 print(f"ERROR: Text file is empty", file=sys.stderr)
@@ -424,7 +495,7 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
         # Chunk text for EdgeTTS
         chunk_max_chars = edge_config.get('chunk_max_chars', 1000)
         chunks = chunk_text_for_edge(text, chunk_max_chars)
-        print(f"STATUS: Created {len(chunks)} chunks for EdgeTTS", file=sys.stderr)
+        log_status(f"Created {len(chunks)} chunks for EdgeTTS", file=sys.stderr)
         
         if not chunks:
             print(f"ERROR: No chunks created from text", file=sys.stderr)
@@ -446,7 +517,7 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
         
         # Final statistics
         success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
-        print(f"STATUS: EdgeTTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
+        log_status(f"EdgeTTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
         
         if len(generated_files) == 0:
             print(f"ERROR: No audio files were generated successfully", file=sys.stderr)

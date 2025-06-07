@@ -9,6 +9,7 @@ import sys
 import re
 import time
 import random
+from core.progress_display_manager import log_error, log_info, log_status
 import numpy as np # type: ignore
 import gc
 from pathlib import Path
@@ -28,7 +29,7 @@ try:
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
-    print("WARNING: scipy not available for audio saving", file=sys.stderr)
+    log_info("WARNING: scipy not available for audio saving")
 
 # Bark imports
 try:
@@ -42,7 +43,7 @@ try:
     BARK_AVAILABLE = True
 except ImportError:
     BARK_AVAILABLE = False
-    print("ERROR: Bark not available. Install with: pip install bark", file=sys.stderr)
+    log_info("ERROR: Bark not available. Install with: pip install bark")
 
 def apply_bark_pronunciation_fixes(text, bark_config):
     """Apply essential pronunciation fixes for Bark"""
@@ -93,7 +94,7 @@ def apply_bark_pronunciation_fixes(text, bark_config):
             fixes_applied += before_count
     
     if fixes_applied > 0 and bark_config.get('verbose', False):
-        print(f"STATUS: Applied {fixes_applied} Bark pronunciation fixes", file=sys.stderr)
+        log_status(f"Applied {fixes_applied} Bark pronunciation fixes")
     
     return processed_text
 
@@ -212,15 +213,15 @@ def set_bark_seed(bark_config, chunk_num=None):
             try:
                 set_seed(actual_seed)
                 if bark_config.get('verbose', False):
-                    print(f"STATUS: Set Bark seed to {actual_seed}", file=sys.stderr)
+                    log_status(f"Set Bark seed to {actual_seed}")
             except:
                 if bark_config.get('verbose', False):
-                    print(f"STATUS: Set system seeds to {actual_seed}", file=sys.stderr)
+                    log_status(f"Set system seeds to {actual_seed}")
 
 def simple_bark_model_reload(bark_config):
     """Simple Bark model reloading based on config"""
     if bark_config.get('verbose', False):
-        print("STATUS: Reloading Bark model...", file=sys.stderr)
+        log_info("STATUS: Reloading Bark model...")
     
     # Clear GPU memory if configured
     if bark_config.get('clear_cuda_cache', True) and torch.cuda.is_available():
@@ -237,7 +238,7 @@ def simple_bark_model_reload(bark_config):
     preload_models()
     
     if bark_config.get('verbose', False):
-        print("STATUS: Bark model reloaded", file=sys.stderr)
+        log_info("STATUS: Bark model reloaded")
 
 def simple_artifact_detection(audio, expected_text, bark_config):
     """Simple artifact detection based on config"""
@@ -255,14 +256,14 @@ def simple_artifact_detection(audio, expected_text, bark_config):
     # Flag suspiciously long audio
     if actual_duration > expected_duration * duration_threshold:
         if bark_config.get('verbose', False):
-            print(f"WARNING: Audio much longer than expected ({actual_duration:.1f}s vs {expected_duration:.1f}s)", file=sys.stderr)
+            log_info("WARNING: Audio much longer than expected ({actual_duration:.1f}s vs {expected_duration:.1f}s)")
         return True
     
     # Check for silence
     max_amplitude = np.max(np.abs(audio))
     if max_amplitude < silence_threshold:
         if bark_config.get('verbose', False):
-            print(f"WARNING: Audio appears silent (max amplitude: {max_amplitude:.4f})", file=sys.stderr)
+            log_info("WARNING: Audio appears silent (max amplitude: {max_amplitude:.4f})")
         return True
     
     return False
@@ -288,7 +289,7 @@ def simple_trim_artifacts(audio_data, bark_config):
     
     if end_energy < main_energy * 0.1:  # End is much quieter
         if bark_config.get('verbose', False):
-            print(f"STATUS: Trimmed low-energy end segment", file=sys.stderr)
+            log_status(f"Trimmed low-energy end segment")
         return main_audio
     
     return audio_data
@@ -321,7 +322,7 @@ def generate_bark_audio_with_config(text, bark_config):
         
         if bark_config.get('verbose', False):
             param_summary = {k: v for k, v in final_params.items() if k != 'text'}
-            print(f"STATUS: Bark generation params: {param_summary}", file=sys.stderr)
+            log_status(f"Bark generation params: {param_summary}")
         
         # Generate audio
         audio = generate_audio(**final_params)
@@ -329,7 +330,7 @@ def generate_bark_audio_with_config(text, bark_config):
         return audio
         
     except Exception as e:
-        print(f"ERROR: Bark generation failed: {e}", file=sys.stderr)
+        log_error(f"ERROR: Bark generation failed")
         return None
 
 def save_bark_audio_with_config(audio_data, output_path, expected_text, bark_config):
@@ -366,7 +367,7 @@ def save_bark_audio_with_config(audio_data, output_path, expected_text, bark_con
     
     if bark_config.get('verbose', False):
         duration = len(audio_data) / SAMPLE_RATE
-        print(f"STATUS: Saved Bark audio: {output_path.name} ({duration:.1f}s)", file=sys.stderr)
+        log_status(f"Saved Bark audio: {output_path.name} ({duration:.1f}s)")
 
 def process_bark_chunks_with_retry(chunks, output_dir, bark_config):
     """Process Bark chunks with retry logic and all config features"""
@@ -381,7 +382,7 @@ def process_bark_chunks_with_retry(chunks, output_dir, bark_config):
         chunk_num = i + 1
         output_file = output_dir / f"chunk_{chunk_num:03d}_bark.wav"
         
-        print(f"STATUS: Processing Bark chunk {chunk_num}/{len(chunks)} ({len(chunk_text)} chars)", file=sys.stderr)
+        log_status(f"Processing Bark chunk {chunk_num}/{len(chunks)} ({len(chunk_text)} chars)")
         
         # Model reload check
         if reload_every > 0 and chunk_num > 1 and (chunk_num - 1) % reload_every == 0:
@@ -401,10 +402,10 @@ def process_bark_chunks_with_retry(chunks, output_dir, bark_config):
                 
                 if audio is None:
                     if attempt < retry_attempts - 1:
-                        print(f"WARNING: Bark attempt {attempt + 1} failed, retrying...", file=sys.stderr)
+                        log_info("WARNING: Bark attempt {attempt + 1} failed, retrying...")
                         continue
                     else:
-                        print(f"ERROR: All {retry_attempts} Bark attempts failed for chunk {chunk_num}", file=sys.stderr)
+                        log_info("ERROR: All {retry_attempts} Bark attempts failed for chunk {chunk_num}")
                         if not skip_failed:
                             break
                         continue
@@ -412,7 +413,7 @@ def process_bark_chunks_with_retry(chunks, output_dir, bark_config):
                 # Check for artifacts
                 has_artifacts = simple_artifact_detection(audio, chunk_text, bark_config)
                 if has_artifacts and attempt < retry_attempts - 1:
-                    print(f"WARNING: Artifacts detected, retrying chunk {chunk_num}", file=sys.stderr)
+                    log_info("WARNING: Artifacts detected, retrying chunk {chunk_num}")
                     continue
                 
                 generation_time = time.time() - start_time
@@ -421,21 +422,21 @@ def process_bark_chunks_with_retry(chunks, output_dir, bark_config):
                 save_bark_audio_with_config(audio, output_file, chunk_text, bark_config)
                 generated_files.append(str(output_file))
                 
-                print(f"STATUS: Bark chunk {chunk_num} completed in {generation_time:.1f}s", file=sys.stderr)
+                log_status(f"Bark chunk {chunk_num} completed in {generation_time:.1f}s")
                 success = True
                 break
                 
             except Exception as e:
                 if attempt < retry_attempts - 1:
-                    print(f"ERROR: Bark attempt {attempt + 1} failed: {e}, retrying...", file=sys.stderr)
+                    log_info("ERROR: Bark attempt {attempt + 1} failed: {e}, retrying...")
                     time.sleep(1)
                     continue
                 else:
-                    print(f"ERROR: Failed to process Bark chunk {chunk_num} after {retry_attempts} attempts: {e}", file=sys.stderr)
+                    log_info("ERROR: Failed to process Bark chunk {chunk_num} after {retry_attempts} attempts")
                     break
         
         if not success and not skip_failed:
-            print(f"ERROR: Critical Bark failure on chunk {chunk_num}", file=sys.stderr)
+            log_info("ERROR: Critical Bark failure on chunk {chunk_num}")
             break
     
     return generated_files
@@ -455,12 +456,12 @@ def process_bark_text_file(text_file: str, output_dir: str, config: Dict[str, An
                           'skip_failed_chunks', 'verbose', 'debug_output']
         missing_params = validate_required_params(bark_config, required_params, 'bark')
         if missing_params:
-            print(f"ERROR: Missing required Bark configuration: {', '.join(missing_params)}", file=sys.stderr)
+            log_info("ERROR: Missing required Bark configuration: {', '.join(missing_params)}")
             return []
         
-        print(f"STATUS: Starting Bark processing (simplified)", file=sys.stderr)
-        print(f"STATUS: Voice: {bark_config['voice']}", file=sys.stderr)
-        print(f"STATUS: Temps: text={bark_config['text_temp']}, waveform={bark_config['waveform_temp']}", file=sys.stderr)
+        log_status(f"Starting Bark processing (simplified)")
+        log_status(f"Voice: {bark_config['voice']}")
+        log_status(f"Temps: text={bark_config['text_temp']}, waveform={bark_config['waveform_temp']}")
         
         # Show important settings
         important_settings = []
@@ -472,32 +473,32 @@ def process_bark_text_file(text_file: str, output_dir: str, config: Dict[str, An
             important_settings.append("pronunciation fixes")
         
         if important_settings:
-            print(f"STATUS: Features: {', '.join(important_settings)}", file=sys.stderr)
+            log_status(f"Features: {', '.join(important_settings)}")
         
         # Read and preprocess text
         with open(text_file, 'r', encoding='utf-8') as f:
             text = f.read().strip()
         
         if not text:
-            print(f"ERROR: No text content to process", file=sys.stderr)
+            log_info("ERROR: No text content to process")
             return []
         
         # Apply Bark-specific preprocessing
         processed_text = apply_bark_text_preprocessing(text, bark_config)
         
         if bark_config.get('verbose', False):
-            print(f"STATUS: Preprocessed {len(text)} -> {len(processed_text)} characters", file=sys.stderr)
+            log_status(f"Preprocessed {len(text)} -> {len(processed_text)} characters")
         
         # Chunk text using simple sentence-based approach
         chunks = chunk_text_for_bark(processed_text, bark_config)
-        print(f"STATUS: Created {len(chunks)} chunks using sentence strategy", file=sys.stderr)
+        log_status(f"Created {len(chunks)} chunks using sentence strategy")
         
         # Ensure output directory exists
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Load Bark models
-        print("STATUS: Loading Bark models...", file=sys.stderr)
+        log_info("STATUS: Loading Bark models...")
         preload_models()
         
         # Process chunks
@@ -505,15 +506,15 @@ def process_bark_text_file(text_file: str, output_dir: str, config: Dict[str, An
         
         # Final statistics
         success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
-        print(f"STATUS: Bark processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
+        log_status(f"Bark processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)")
         
         if len(generated_files) == 0:
-            print(f"ERROR: No Bark audio files were generated successfully", file=sys.stderr)
+            log_info("ERROR: No Bark audio files were generated successfully")
         
         return generated_files
         
     except Exception as e:
-        print(f"ERROR: Bark processing failed: {e}", file=sys.stderr)
+        log_info("ERROR: Bark processing failed")
         return []
 
 def register_bark_engine():

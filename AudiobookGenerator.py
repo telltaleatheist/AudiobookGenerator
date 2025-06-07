@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-AudiobookGenerator - Clean project-based audiobook generation
-Simple, focused command-line interface for audiobook processing
-Updated with hierarchical PDF chapter support and universal --engine-voice parameter
+AudiobookGenerator - CLEANED: Simplified startup and removed duplicate completion message
 """
 
 import sys
 import argparse
 from pathlib import Path
 import re
+from core.progress_display_manager import log_error, log_info, log_success, log_warning
 from managers.project_manager import ProjectManager
 from core.pipeline_manager import PipelineManager
 from managers.config_manager import ConfigManager
@@ -103,14 +102,14 @@ def parse_sections(section_args):
                 start, end = map(int, arg.split('-'))
                 sections.extend(range(start, end + 1))
             except ValueError:
-                print(f"❌ Invalid section range: {arg}")
+                log_error(f"Invalid section range: {arg}")
                 return None
         else:
             # Single number
             try:
                 sections.append(int(arg))
             except ValueError:
-                print(f"❌ Invalid section number: {arg}")
+                log_error(f"Invalid section number: {arg}")
                 return None
     
     return sorted(list(set(sections)))
@@ -123,16 +122,14 @@ def create_cli_overrides(args):
     voice_to_use = None
     if args.engine_voice:
         voice_to_use = args.engine_voice
-        print(f"🎙️ Using engine voice: {voice_to_use}")
+        # CLEANED: Remove verbose voice message
     elif args.voice:
         voice_to_use = args.voice
-        print(f"⚠️ --voice is deprecated, use --engine-voice instead")
-        print(f"🎙️ Using engine voice: {voice_to_use}")
+        log_warning(f"--voice is deprecated, use --engine-voice instead")
     
     # Apply voice to the selected TTS engine
     if voice_to_use:
         engine = args.tts_engine
-        print(f"🎛️ Applying voice '{voice_to_use}' to {engine.upper()} engine")
         
         # Apply to the specific engine (let the engine validate compatibility)
         if engine == 'bark':
@@ -149,9 +146,10 @@ def create_cli_overrides(args):
             overrides['xtts'] = overrides.get('xtts', {})
             overrides['xtts']['speaker'] = voice_to_use
         elif engine == 'f5':
-            print(f"💡 F5-TTS uses voice cloning from samples/ directory, ignoring --engine-voice")
+            # CLEANED: Remove verbose F5 message
+            pass
         else:
-            print(f"⚠️ Unknown engine '{engine}', applying voice parameter anyway")
+            log_warning(f"Unknown engine '{engine}', applying voice parameter anyway")
             overrides[engine] = overrides.get(engine, {})
             overrides[engine]['voice'] = voice_to_use
     
@@ -189,7 +187,7 @@ def create_cli_overrides(args):
         if 'metadata' not in overrides:
             overrides['metadata'] = {}
         overrides['metadata']['rvc_voice'] = args.rvc_model
-        print(f"💡 Note: --rvc-model is deprecated, use --rvc-voice instead")
+        log_info("💡 Note: --rvc-model is deprecated, use --rvc-voice instead")
     
     # Global RVC settings (applies to all voices)
     rvc_global = {}
@@ -235,7 +233,7 @@ def validate_sections(source_file, sections, section_type="sections"):
     suffix = source_path.suffix.lower()
     
     if suffix not in ['.epub', '.pdf']:
-        print(f"❌ {section_type.title()} selection only available for EPUB and PDF files")
+        log_error(f"{section_type.title()} selection only available for EPUB and PDF files")
         return False
     
     try:
@@ -255,17 +253,17 @@ def validate_sections(source_file, sections, section_type="sections"):
         
         for section in sections:
             if section < 1 or section > total_sections:
-                print(f"❌ {section_label.title()} {section} out of range (available: 1-{total_sections})")
+                log_error(f"{section_label.title()} {section} out of range (available: 1-{total_sections})")
                 return False
         
-        print(f"✅ Processing {section_label}s: {sections}")
+        log_success(f"Processing {section_label}s: {sections}")
         return True
         
     except ImportError:
-        print("⚠️ Could not validate sections (missing dependencies)")
+        log_info("⚠️ Could not validate sections (missing dependencies)")
         return True  # Allow processing to continue
     except Exception as e:
-        print(f"⚠️ Could not validate sections: {e}")
+        log_warning(f"Could not validate sections: {e}")
         return True  # Allow processing to continue
 
 def handle_list_sections(project_manager, project_name):
@@ -281,7 +279,7 @@ def handle_list_sections(project_manager, project_name):
                 list_epub_sections(source_file, output_json=False)
                 return True
             except ImportError:
-                print("❌ Section listing requires: pip install ebooklib beautifulsoup4")
+                log_info("❌ Section listing requires: pip install ebooklib beautifulsoup4")
                 return False
         elif suffix == '.pdf':
             try:
@@ -289,14 +287,14 @@ def handle_list_sections(project_manager, project_name):
                 list_pdf_sections(source_file, output_json=False)
                 return True
             except ImportError:
-                print("❌ PDF chapter listing requires: pip install pymupdf")
+                log_info("❌ PDF chapter listing requires: pip install pymupdf")
                 return False
         else:
-            print("❌ Section listing only available for EPUB and PDF files")
+            log_info("❌ Section listing only available for EPUB and PDF files")
             return False
         
     except Exception as e:
-        print(f"❌ {e}")
+        log_error(f"{e}")
         return False
 
 def handle_interactive_start(project_manager, project_name, sections=None):
@@ -312,15 +310,15 @@ def handle_interactive_start(project_manager, project_name, sections=None):
         except ImportError:
             suffix = Path(source_file).suffix.lower()
             if suffix == '.epub':
-                print("❌ Interactive start requires: pip install ebooklib beautifulsoup4")
+                log_info("❌ Interactive start requires: pip install ebooklib beautifulsoup4")
             elif suffix == '.pdf':
-                print("❌ Interactive start requires: pip install pymupdf")
+                log_info("❌ Interactive start requires: pip install pymupdf")
             else:
-                print("❌ Interactive start requires additional dependencies")
+                log_info("❌ Interactive start requires additional dependencies")
             return None
         
     except Exception as e:
-        print(f"❌ {e}")
+        log_error(f"{e}")
         return None
 
 def determine_section_type_and_values(args, source_file):
@@ -334,22 +332,22 @@ def determine_section_type_and_values(args, source_file):
     # Validation logic
     if suffix == '.pdf':
         if chapters and sections:
-            print("❌ Cannot specify both --chapters and --sections for PDF files")
+            log_info("❌ Cannot specify both --chapters and --sections for PDF files")
             return None, None
         elif chapters:
             return chapters, "chapters"
         elif sections:
-            print("💡 Using --sections as page numbers for PDF file")
+            log_info("💡 Using --sections as page numbers for PDF file")
             return sections, "pages"
         else:
             return None, None
     
     elif suffix == '.epub':
         if chapters and sections:
-            print("❌ Cannot specify both --chapters and --sections for EPUB files")
+            log_info("❌ Cannot specify both --chapters and --sections for EPUB files")
             return None, None
         elif chapters:
-            print("💡 EPUB files use sections, not chapters. Using --chapters as section numbers")
+            log_info("💡 EPUB files use sections, not chapters. Using --chapters as section numbers")
             return chapters, "sections"
         elif sections:
             return sections, "sections"
@@ -358,7 +356,7 @@ def determine_section_type_and_values(args, source_file):
     
     else:  # .txt files
         if chapters or sections:
-            print("⚠️ Section/chapter selection not supported for TXT files")
+            log_info("⚠️ Section/chapter selection not supported for TXT files")
         return None, None
 
 def main():
@@ -377,13 +375,13 @@ def main():
             )
             voices = list_available_rvc_voices(config)
             
-            print(f"🎭 Available RVC voices for project '{args.project}':")
+            log_info("🎭 Available RVC voices for project '{args.project}':")
             for voice_name, model_name in voices:
-                print(f"  • {voice_name} → {model_name}")
+                log_info("  • {voice_name} → {model_name}")
             return 0
             
         except Exception as e:
-            print(f"❌ {e}")
+            log_error(f"{e}")
             return 1
 
     # Handle project creation
@@ -392,7 +390,7 @@ def main():
             project_manager.create_project(args.init)
             return 0
         except Exception as e:
-            print(f"❌ {e}")
+            log_error(f"{e}")
             return 1
     
     # Require project for all other operations
@@ -433,7 +431,7 @@ def main():
         if args.interactive_start:
             start_info = handle_interactive_start(project_manager, args.project, sections)
             if start_info is None:
-                print("❌ Interactive start selection failed or cancelled")
+                log_info("❌ Interactive start selection failed or cancelled")
                 return 1
         
         # Generate batch name and paths
@@ -469,12 +467,8 @@ def main():
         project_manager.save_config(config, paths['config'])
         project_manager.save_config(config, paths['job_config'])  # Copy to job directory
         
-        # Display project info
-        print(f"🚀 Audiobook Pipeline")
-        print(f"📁 Project: {args.project}")
-        print(f"📦 Batch: {batch_name}")
-        print(f"📖 Source: {source_file.name}")
-        print(f"🎤 TTS Engine: {args.tts_engine.upper()}")
+        # CLEANED: Simplified project display - no verbose config summary
+        # The pipeline manager will show the clean header
         
         if start_info:
             file_type = Path(source_file).suffix.lower()
@@ -491,13 +485,13 @@ def main():
                 if len(chapter_title) > 40:
                     chapter_title = chapter_title[:37] + "..."
                 
-                print(f"🎯 Start: Chapter {chapter}, Page {page_in_chapter} (Doc Page {absolute_page}), Word {word}")
-                print(f"📖 Chapter: '{chapter_title}'")
+                log_info("🎯 Start: Chapter {chapter}, Page {page_in_chapter} (Doc Page {absolute_page}), Word {word}")
+                log_info("📖 Chapter: '{chapter_title}'")
                 
             elif selection_type == 'page_based_pdf':
                 page = start_info.get('start_from_page', '?')
                 word = start_info.get('start_from_word', 1)
-                print(f"🎯 Start: Page {page}, Word {word}")
+                log_info("🎯 Start: Page {page}, Word {word}")
                 
             else:
                 # Original section-based system
@@ -506,18 +500,16 @@ def main():
                 subsection = start_info.get('subsection', '?')
                 word = start_info.get('word', 1)
                 word_display = f", Word {word}" if word > 1 else ""
-                print(f"🎯 Start: {section_label.title()} {section}, Subsection {subsection}{word_display}")
+                log_info("🎯 Start: {section_label.title()} {section}, Subsection {subsection}{word_display}")
         
         # Show section/chapter info if specified
         if sections:
             if section_type == "chapters":
-                print(f"📖 Processing chapters: {sections}")
+                log_info("📖 Processing chapters: {sections}")
             elif section_type == "sections":
-                print(f"📝 Processing sections: {sections}")
+                log_info("📝 Processing sections: {sections}")
             elif section_type == "pages":
-                print(f"📄 Processing pages: {sections}")
-        
-        project_manager.display_config_summary(config)
+                log_info("📄 Processing pages: {sections}")
         
         # Execute pipeline
         pipeline_manager = PipelineManager()
@@ -533,16 +525,15 @@ def main():
             skip_rvc=args.skip_rvc
         )
                 
+        # CLEANED: Remove duplicate completion message - pipeline_manager already shows completion
         if success:
-            print(f"\n🎉 Processing Complete!")
-            print(f"🎵 Final audio: {paths['final']}")
             return 0
         else:
-            print("❌ Pipeline failed")
+            log_info("❌ Pipeline failed")
             return 1
             
     except Exception as e:
-        print(f"❌ {e}")
+        log_error(f"{e}")
         return 1
     
 def list_available_rvc_voices(config):
@@ -566,16 +557,16 @@ def validate_rvc_voice(project_manager, project_name, rvc_voice):
         voice_names = [v[0] for v in available_voices]
         
         if rvc_voice not in voice_names:
-            print(f"❌ RVC voice '{rvc_voice}' not found!")
-            print(f"📋 Available voices:")
+            log_error(f"RVC voice '{rvc_voice}' not found!")
+            log_info("📋 Available voices:")
             for voice_name, model_name in available_voices:
-                print(f"  • {voice_name} → {model_name}")
+                log_info("  • {voice_name} → {model_name}")
             return False
         
         return True
         
     except Exception as e:
-        print(f"⚠️ Could not validate RVC voice: {e}")
+        log_warning(f"Could not validate RVC voice: {e}")
         return True  # Allow processing to continue
 
 if __name__ == "__main__":

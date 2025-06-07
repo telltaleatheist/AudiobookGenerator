@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Audio Combiner - FFmpeg-based audio combination and file operations
+FIXED: Added proper imports and string formatting
 """
 
 import sys
@@ -9,11 +10,13 @@ import tempfile
 from pathlib import Path
 from typing import List
 
+from core.progress_display_manager import log_error, log_info, print_above_progress
+
 def combine_audio_files(audio_files: List[str], output_path: str, silence_gap: float = 0.3) -> bool:
     """Combine multiple audio files with silence gaps"""
     
     if not audio_files:
-        print(f"❌ No audio files to combine", file=sys.stderr)
+        log_error("No audio files to combine")
         return False
     
     if len(audio_files) == 1:
@@ -22,8 +25,8 @@ def combine_audio_files(audio_files: List[str], output_path: str, silence_gap: f
         shutil.copy2(audio_files[0], output_path)
         return True
     
-    print(f"STATUS: Combining {len(audio_files)} audio files", file=sys.stderr)
-    
+    log_info(f"Combining {len(audio_files)} audio files")
+        
     try:
         # Create temporary concat file for ffmpeg
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -41,8 +44,8 @@ def combine_audio_files(audio_files: List[str], output_path: str, silence_gap: f
                 str(output_path)
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            print(f"STATUS: Audio files combined successfully", file=sys.stderr)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print_above_progress("Audio files combined successfully", "success")
             return True
             
         finally:
@@ -53,10 +56,10 @@ def combine_audio_files(audio_files: List[str], output_path: str, silence_gap: f
                 pass
         
     except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to combine audio files: {e}", file=sys.stderr)
+        log_error("Failed to combine audio files")
         return False
     except FileNotFoundError:
-        print(f"❌ ffmpeg not found. Please install ffmpeg", file=sys.stderr)
+        log_error("ffmpeg not found. Please install ffmpeg")
         return False
 
 def combine_master_file(section_file: str, master_file: str) -> bool:
@@ -66,14 +69,14 @@ def combine_master_file(section_file: str, master_file: str) -> bool:
     master_path = Path(master_file)
     
     if not section_path.exists():
-        print(f"❌ Section file not found: {section_path}", file=sys.stderr)
+        log_error("Section file not found")
         return False
     
     # If master doesn't exist, just copy the section
     if not master_path.exists():
         import shutil
         shutil.copy2(section_path, master_path)
-        print(f"STATUS: Created master file with first section", file=sys.stderr)
+        print_above_progress("Created master file with first section", "success")
         return True
     
     # Master exists, append the new section
@@ -98,13 +101,13 @@ def combine_master_file(section_file: str, master_file: str) -> bool:
                 temp_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             # Replace master with combined file
             import shutil
             shutil.move(temp_path, master_path)
             
-            print(f"STATUS: Added section to master file", file=sys.stderr)
+            print_above_progress("Added section to master file", "success")
             return True
             
         finally:
@@ -119,10 +122,10 @@ def combine_master_file(section_file: str, master_file: str) -> bool:
                 pass
         
     except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to combine with master: {e}", file=sys.stderr)
+        log_info("Failed to combine with master")
         return False
     except Exception as e:
-        print(f"❌ Master file combination error: {e}", file=sys.stderr)
+        log_info("Master file combination error")
         return False
 
 def get_audio_duration(audio_file: str) -> float:
@@ -132,11 +135,11 @@ def get_audio_duration(audio_file: str) -> float:
             "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1", str(audio_file)
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         duration = float(result.stdout.strip())
         return duration
     except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
-        print(f"❌ Could not get audio duration for {audio_file}: {e}", file=sys.stderr)
+        log_error(f"Could not get audio duration for {audio_file}")
         return 0.0
 
 def normalize_audio(input_file: str, output_file: str) -> bool:
@@ -149,12 +152,12 @@ def normalize_audio(input_file: str, output_file: str) -> bool:
             str(output_file)
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
         
     except subprocess.CalledProcessError as e:
-        print(f"❌ Audio normalization failed: {e}", file=sys.stderr)
+        log_error("Audio normalization failed")
         return False
     except FileNotFoundError:
-        print(f"❌ ffmpeg not found", file=sys.stderr)
+        log_error("ffmpeg not found")
         return False
