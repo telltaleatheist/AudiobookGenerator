@@ -341,26 +341,24 @@ class ProjectManager:
         return batch_name
     
     def get_batch_paths(self, project_name, batch_name, tts_engine):
-        """Get all paths for a batch"""
+        """Get all paths for a batch - CLEANED UP"""
         project_dir = self.validate_project(project_name)
         batch_dir = project_dir / "jobs" / batch_name
         batch_dir.mkdir(parents=True, exist_ok=True)
-        
-        engine_suffix = "_edge" if tts_engine == 'edge' else "_bark"
         
         paths = {
             'project_dir': project_dir,
             'batch_dir': batch_dir,
             'temp_dir': batch_dir / "temp_files",
-            'chunks': batch_dir / f"{project_name}_{batch_name}_chunks{engine_suffix}.txt",
-            'combined': batch_dir / f"{batch_name}_tts.wav",
-            'final': batch_dir / f"{batch_name}_rvc.wav",
+            'sections_dir': batch_dir / "sections",
+            'final': batch_dir / f"{project_name}_{batch_name}_master.wav",
             'log': batch_dir / "progress.log",
             'config': project_dir / "config" / "config.json",
             'job_config': batch_dir / "config.json"
         }
         
-        paths['temp_dir'].mkdir(exist_ok=True)
+        # Create required directories
+        paths['sections_dir'].mkdir(exist_ok=True)
         return paths
     
     def create_config(self, project_name, batch_name, tts_engine, sections=None, 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Pipeline Manager - Section-based processing with resumable progress
-Orchestrates TTS → RVC → Combine cycle for each section
+CLEANED UP: Simplified progress tracking, better file organization
 """
 
 import json
@@ -25,7 +25,7 @@ class PipelineManager:
         self.progress_file = paths['log']
         
         try:
-            # Load or initialize progress
+            # Load or initialize progress (simplified - no config storage)
             self.progress = self._load_progress()
             
             # Initialize if starting fresh
@@ -62,13 +62,13 @@ class PipelineManager:
     def _initialize_progress(self, source_file: str, paths: Dict[str, Path], 
                         config: Dict[str, Any], sections: Optional[List[int]], 
                         skip_rvc: bool):
-        """Initialize progress - NO CONFIG STORAGE"""
+        """Initialize progress - CLEANED UP (no config storage)"""
         self.progress = {
             'status': 'started',
             'start_time': datetime.now().isoformat(),
             'source_file': str(source_file),
             'skip_rvc': skip_rvc,
-            'project_name': config['metadata']['project_name'],      # Just basics
+            'project_name': config['metadata']['project_name'],
             'batch_name': config['metadata']['batch_name'],
             'tts_engine': config['metadata']['tts_engine'],
             'rvc_voice': config['metadata']['rvc_voice'],
@@ -100,10 +100,16 @@ class PipelineManager:
             from core.section_manager import SectionManager
             
             source_file = self.progress['source_file']
-            config = self.progress['config']
+            
+            # Load config from job config file (not stored in progress)
+            config_path = Path(self.progress['paths']['job_config'])
+            with open(config_path, 'r') as f:
+                config = json.load(f)
             
             # Step 1: Extract and clean text
-            clean_text_file = Path(self.progress['paths']['batch_dir']) / "clean_text.txt"
+            batch_dir = Path(self.progress['paths']['batch_dir'])
+            clean_text_file = batch_dir / "clean_text.txt"
+            
             if not preprocess_file(source_file, clean_text_file, config):
                 print(f"❌ Text preprocessing failed")
                 return False
@@ -115,8 +121,8 @@ class PipelineManager:
             section_manager = SectionManager(config)
             sections = section_manager.split_text_into_sections(text)
             
-            # Step 3: Save sections
-            batch_dir = Path(self.progress['paths']['batch_dir'])
+            # Step 3: Save sections to organized sections folder
+            sections_dir = Path(self.progress['paths']['sections_dir'])
             section_files = section_manager.save_sections(sections, batch_dir)
             
             # Update progress
@@ -127,9 +133,6 @@ class PipelineManager:
             self._mark_phase_complete('preprocessing')
             
             duration = time.time() - start_time
-            self.progress['timing']['preprocessing'] = duration
-            self._save_progress()
-            
             print(f"✅ Preprocessing complete: {len(sections)} sections created")
             return True
             
@@ -168,8 +171,8 @@ class PipelineManager:
         self._save_progress()
         
         try:
-            batch_dir = Path(self.progress['paths']['batch_dir'])
-            section_file = batch_dir / "sections" / f"section_{section_num:03d}.txt"
+            sections_dir = Path(self.progress['paths']['sections_dir'])
+            section_file = sections_dir / f"section_{section_num:03d}.txt"
             
             if not section_file.exists():
                 print(f"❌ Section file not found: {section_file}")
@@ -185,7 +188,6 @@ class PipelineManager:
                     return False
             
             # Mark section as complete BEFORE master combination
-            # Add safety checks to prevent list errors
             remaining_sections = self.progress['sections']['remaining']
             if section_num in remaining_sections:
                 remaining_sections.remove(section_num)
@@ -216,7 +218,7 @@ class PipelineManager:
         try:
             from engines import get_engine_processor
             
-            # Load config from file (don't use stored config)
+            # Load config from job config file
             config_path = Path(self.progress['paths']['job_config'])
             with open(config_path, 'r') as f:
                 config = json.load(f)
@@ -259,17 +261,21 @@ class PipelineManager:
             return False
     
     def _run_section_rvc(self, section_num: int) -> bool:
-        """Run RVC processing on a single section"""
+        """Run RVC processing on a single section - CLEANED UP"""
         print(f"  🎭 RVC Processing...")
         
         try:
             from audio.rvc_processor import process_audio_through_rvc
             
-            batch_dir = Path(self.progress['paths']['batch_dir'])
-            tts_file = self.progress['sections']['files'][f'section_{section_num}_tts']
-            rvc_file = batch_dir / f"section_{section_num:03d}_rvc.wav"
+            # Load config from job config file
+            config_path = Path(self.progress['paths']['job_config'])
+            with open(config_path, 'r') as f:
+                config = json.load(f)
             
-            config = self.progress['config']
+            # Get section files from sections folder
+            sections_dir = Path(self.progress['paths']['sections_dir'])
+            tts_file = self.progress['sections']['files'][f'section_{section_num}_tts']
+            rvc_file = sections_dir / f"section_{section_num:03d}_rvc.wav"
             
             if not process_audio_through_rvc(tts_file, str(rvc_file), config):
                 print(f"❌ RVC processing failed for section {section_num}")
@@ -293,7 +299,6 @@ class PipelineManager:
         try:
             from audio.audio_combiner import combine_master_file
             
-            batch_dir = Path(self.progress['paths']['batch_dir'])
             master_file = Path(self.progress['paths']['final'])
             
             # Determine which file to use (RVC or TTS)
@@ -321,6 +326,10 @@ class PipelineManager:
                 import shutil
                 shutil.rmtree(temp_dir)  # Delete entire temp folder
                 print(f"  ✅ Removed temp directory")
+                
+            # Mark cleanup complete
+            self._mark_phase_complete('cleanup')
+            
         except Exception as e:
             print(f"⚠️ Cleanup warning: {e}")
     
