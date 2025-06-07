@@ -179,3 +179,7 @@ managers/__pycache__/project_manager.cpython-310.pyc
 preprocessing/__pycache__/__init__.cpython-310.pyc
 preprocessing/__pycache__/file_extractors.cpython-310.pyc
 preprocessing/__pycache__/text_processor.cpython-310.pyc
+engines/__pycache__/bark_engine.cpython-310.pyc
+engines/__pycache__/edge_engine.cpython-310.pyc
+engines/__pycache__/f5_engine.cpython-310.pyc
+engines/__pycache__/openai_engine.cpython-310.pyc
