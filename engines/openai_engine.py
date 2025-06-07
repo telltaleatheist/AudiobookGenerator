@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 OpenAI Engine - OpenAI TTS processor with voice selection and quality control
-INTEGRATED: Uses dynamic parameter loading from engine registry
-Supports all OpenAI TTS models and voices with comprehensive error handling
+UPDATED: Uses new section-based architecture with dynamic parameter loading
 """
 
 import sys
@@ -10,12 +9,14 @@ import os
 import time
 import requests # type: ignore
 from pathlib import Path
+from typing import List, Dict, Any
 
 # Import dynamic utilities from engine registry
 from engines.base_engine import (
     extract_engine_config, 
     filter_params_for_function,
-    create_generation_params
+    create_generation_params,
+    validate_required_params
 )
 
 # OpenAI imports
@@ -99,7 +100,7 @@ def validate_openai_config(openai_config):
     
     # Validate speed
     speed = openai_config.get('speed', 1.0)
-    if not (0.25 <= speed <= 4.0):
+    if speed is not None and not (0.25 <= speed <= 4.0):
         print(f"WARNING: Speed {speed} outside valid range (0.25-4.0)", file=sys.stderr)
     
     return True
@@ -133,10 +134,10 @@ def generate_openai_audio_dynamic(client, text, openai_config):
         }
         
         # Add optional parameters if present
-        if 'speed' in openai_config:
+        if 'speed' in openai_config and openai_config['speed'] is not None:
             generation_params['speed'] = openai_config['speed']
         
-        if 'response_format' in openai_config:
+        if 'response_format' in openai_config and openai_config['response_format'] is not None:
             generation_params['response_format'] = openai_config['response_format']
         
         print(f"STATUS: Model: {generation_params['model']}", file=sys.stderr)
@@ -241,10 +242,14 @@ def estimate_openai_cost(text, model='tts-1'):
 def process_openai_chunks_with_retry(client, chunks, output_dir, openai_config):
     """Process chunks with retry logic and cost estimation"""
     generated_files = []
+    
+    # Get configuration parameters
     retry_attempts = openai_config.get('retry_attempts', 3)
     retry_delay = openai_config.get('retry_delay', 1.0)
     model = openai_config.get('model', 'tts-1')
     response_format = openai_config.get('response_format', 'mp3')
+    ignore_errors = openai_config.get('ignore_errors', False)
+    skip_failed_chunks = openai_config.get('skip_failed_chunks', False)
     
     # Calculate total cost estimate
     total_chars = sum(len(chunk) for chunk in chunks)
@@ -284,7 +289,7 @@ def process_openai_chunks_with_retry(client, chunks, output_dir, openai_config):
                         continue
                     else:
                         print(f"ERROR: All {retry_attempts} attempts failed for chunk {chunk_num}", file=sys.stderr)
-                        if not openai_config.get('ignore_errors', False):
+                        if not ignore_errors:
                             break
                         continue
                 
@@ -313,71 +318,83 @@ def process_openai_chunks_with_retry(client, chunks, output_dir, openai_config):
                     print(f"ERROR: Failed to process chunk {chunk_num} after {retry_attempts} attempts: {e}", file=sys.stderr)
                     break
         
-        if not success and not openai_config.get('skip_failed_chunks', False):
+        if not success and not skip_failed_chunks:
             print(f"ERROR: Critical failure on chunk {chunk_num}", file=sys.stderr)
             break
     
     return generated_files
 
-def process_openai_text_file(text_file, output_dir, config, paths):
-    """Main OpenAI engine processor with dynamic configuration detection"""
+def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, Any], paths: Dict[str, Any]) -> List[str]:
+    """Main OpenAI engine processor with new architecture"""
     if not OPENAI_AVAILABLE:
         raise ImportError("OpenAI library not available. Install with: pip install openai")
     
-    # Extract ALL OpenAI config parameters dynamically
-    openai_config = extract_engine_config(config, 'openai', verbose=True)
-    
-    print(f"STATUS: Starting OpenAI TTS processing (dynamic mode)", file=sys.stderr)
-    print(f"STATUS: Model: {openai_config.get('model', 'tts-1')}", file=sys.stderr)
-    print(f"STATUS: Voice: {openai_config.get('voice', 'onyx')}", file=sys.stderr)
-    
-    # Display configured parameters
-    active_params = {k: v for k, v in openai_config.items() if v is not None and k != 'api_key'}
-    if active_params:
-        print(f"STATUS: Active parameters: {active_params}", file=sys.stderr)
-    
-    # Validate configuration
-    if not validate_openai_config(openai_config):
-        return []
-    
-    # Setup OpenAI client
     try:
-        client = setup_openai_client(openai_config)
-        print(f"STATUS: OpenAI client initialized successfully", file=sys.stderr)
+        # Extract ALL OpenAI config parameters dynamically
+        openai_config = extract_engine_config(config, 'openai', verbose=True)
+        
+        # Validate required parameters
+        required_params = ['voice', 'model', 'retry_attempts', 'retry_delay', 'ignore_errors', 'skip_failed_chunks']
+        missing_params = validate_required_params(openai_config, required_params, 'openai')
+        if missing_params:
+            print(f"ERROR: Missing required OpenAI configuration: {', '.join(missing_params)}", file=sys.stderr)
+            return []
+        
+        print(f"STATUS: Starting OpenAI TTS processing", file=sys.stderr)
+        print(f"STATUS: Model: {openai_config['model']}", file=sys.stderr)
+        print(f"STATUS: Voice: {openai_config['voice']}", file=sys.stderr)
+        
+        # Display configured parameters
+        active_params = {k: v for k, v in openai_config.items() if v is not None and k != 'api_key'}
+        if openai_config.get('verbose', False):
+            print(f"STATUS: Active parameters: {active_params}", file=sys.stderr)
+        
+        # Validate configuration
+        if not validate_openai_config(openai_config):
+            return []
+        
+        # Setup OpenAI client
+        try:
+            client = setup_openai_client(openai_config)
+            print(f"STATUS: OpenAI client initialized successfully", file=sys.stderr)
+        except Exception as e:
+            print(f"ERROR: Failed to initialize OpenAI client: {e}", file=sys.stderr)
+            return []
+        
+        # Read clean text (already preprocessed by pipeline)
+        with open(text_file, 'r', encoding='utf-8') as f:
+            text = f.read().strip()
+        
+        if not text:
+            print(f"ERROR: No text content to process", file=sys.stderr)
+            return []
+        
+        # Chunk text for OpenAI TTS
+        chunk_max_chars = openai_config.get('chunk_max_chars', 4000)
+        chunks = chunk_text_for_openai(text, chunk_max_chars)
+        print(f"STATUS: Created {len(chunks)} chunks for OpenAI TTS", file=sys.stderr)
+        
+        # Ensure output directory exists
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Process chunks with retry logic and cost tracking
+        generated_files = process_openai_chunks_with_retry(client, chunks, output_dir, openai_config)
+        
+        # Final statistics
+        success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
+        print(f"STATUS: OpenAI TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
+        
+        if len(generated_files) == 0:
+            print(f"ERROR: No audio files were generated successfully", file=sys.stderr)
+        
+        return generated_files
+        
     except Exception as e:
-        print(f"ERROR: Failed to initialize OpenAI client: {e}", file=sys.stderr)
+        print(f"ERROR: OpenAI TTS processing failed: {e}", file=sys.stderr)
         return []
-    
-    # Read clean text
-    with open(text_file, 'r', encoding='utf-8') as f:
-        text = f.read().strip()
-    
-    # Chunk text for OpenAI TTS
-    chunk_max_chars = openai_config.get('chunk_max_chars', 4000)
-    chunks = chunk_text_for_openai(text, chunk_max_chars)
-    print(f"STATUS: Created {len(chunks)} chunks for OpenAI TTS", file=sys.stderr)
-    
-    # Ensure output directory exists
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Process chunks with retry logic and cost tracking
-    generated_files = process_openai_chunks_with_retry(client, chunks, output_dir, openai_config)
-    
-    # Final statistics
-    success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
-    print(f"STATUS: OpenAI TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
-    
-    if len(generated_files) == 0:
-        print(f"ERROR: No audio files were generated successfully", file=sys.stderr)
-    
-    return generated_files
 
 def register_openai_engine():
     """Register OpenAI engine with the registry"""
     from engines.base_engine import register_engine
-    
-    register_engine(
-        name='openai',
-        processor_func=process_openai_text_file
-    )
+    register_engine('openai', process_openai_text_file)

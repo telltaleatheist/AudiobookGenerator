@@ -150,7 +150,8 @@
   },
   "pipeline": {
     "cleanup_temp_files": true,
-    "cleanup_intermediate_files": true
+    "cleanup_intermediate_files": true,
+    "target_section_length": 30
   },
   "openai": {
     "voice": "onyx",
