@@ -9,8 +9,9 @@ import sys
 import argparse
 from pathlib import Path
 import re
-from project_manager import ProjectManager
-from pipeline_manager import PipelineManager
+from managers.project_manager import ProjectManager
+from core.pipeline_manager import PipelineManager
+from managers.config_manager import ConfigManager
 
 def create_parser():
     """Create argument parser"""
@@ -239,7 +240,7 @@ def validate_sections(source_file, sections, section_type="sections"):
     
     try:
         if suffix == '.epub':
-            from preprocessing import get_epub_section_count
+            from preprocessing.text_processor import get_epub_section_count
             total_sections = get_epub_section_count(source_file)
             section_label = "section"
         elif suffix == '.pdf':
@@ -520,14 +521,18 @@ def main():
         
         # Execute pipeline
         pipeline_manager = PipelineManager()
+        
+        # Convert Path objects to strings for JSON serialization
+        string_paths = {k: str(v) for k, v in paths.items()}
+        
         success = pipeline_manager.run(
             source_file=str(source_file),
-            paths=paths,
+            paths=string_paths,
             config=config,
             sections=sections,
             skip_rvc=args.skip_rvc
         )
-        
+                
         if success:
             print(f"\n🎉 Processing Complete!")
             print(f"🎵 Final audio: {paths['final']}")

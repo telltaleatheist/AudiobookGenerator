@@ -12,7 +12,7 @@ import asyncio
 from pathlib import Path
 
 # Import dynamic utilities from engine registry
-from engine_registry import (
+from engines.base_engine import (
     extract_engine_config, 
     filter_params_for_function,
     create_generation_params
@@ -431,7 +431,7 @@ def process_edge_text_file(text_file, output_dir, config, paths):
 
 def register_edge_engine():
     """Register EdgeTTS (free) engine with the registry"""
-    from engine_registry import register_engine
+    from engines.base_engine import register_engine
     
     # NO DEFAULT CONFIG NEEDED - everything comes from JSON file
     register_engine(

@@ -386,9 +386,10 @@ class ProjectManager:
             'tts_engine': tts_engine,
             'sections': sections,
             'source_file': str(source_file) if source_file else None,
-            'last_batch': batch_name
+            'last_batch': batch_name,
+            'project_name': project_name
         })
-        
+
         # Auto-detect and add voice samples AFTER loading config
         if tts_engine in ['f5', 'xtts']:
             if tts_engine == 'f5':

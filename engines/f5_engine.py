@@ -7,11 +7,11 @@ Keeps all existing functionality while adding automatic config detection
 
 import sys
 import time
-import torch
+import torch # type: ignore
 from pathlib import Path
 
 # Import dynamic utilities from engine registry
-from engine_registry import (
+from engines.base_engine import (
     extract_engine_config, 
     filter_params_for_function,
     create_generation_params
@@ -19,8 +19,8 @@ from engine_registry import (
 
 # F5-TTS imports
 try:
-    from f5_tts.api import F5TTS
-    import torchaudio
+    from f5_tts.api import F5TTS # type: ignore
+    import torchaudio # type: ignore
     F5_AVAILABLE = True
 except ImportError:
     F5_AVAILABLE = False
@@ -265,7 +265,7 @@ def process_f5_text_file(text_file, output_dir, config, paths):
 
 def register_f5_engine():
     """Register F5 engine with the registry"""
-    from engine_registry import register_engine
+    from engines.base_engine import register_engine
     
     # NO DEFAULT CONFIG NEEDED - everything comes from JSON file
     register_engine(

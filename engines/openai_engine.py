@@ -8,11 +8,11 @@ Supports all OpenAI TTS models and voices with comprehensive error handling
 import sys
 import os
 import time
-import requests
+import requests # type: ignore
 from pathlib import Path
 
 # Import dynamic utilities from engine registry
-from engine_registry import (
+from engines.base_engine import (
     extract_engine_config, 
     filter_params_for_function,
     create_generation_params
@@ -20,7 +20,7 @@ from engine_registry import (
 
 # OpenAI imports
 try:
-    import openai
+    import openai # type: ignore
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
@@ -375,7 +375,7 @@ def process_openai_text_file(text_file, output_dir, config, paths):
 
 def register_openai_engine():
     """Register OpenAI engine with the registry"""
-    from engine_registry import register_engine
+    from engines.base_engine import register_engine
     
     register_engine(
         name='openai',

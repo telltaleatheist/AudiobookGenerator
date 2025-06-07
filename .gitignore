@@ -163,3 +163,19 @@ audio/intermediate/29a7c147f1/21_Vocals_Converted_66593fa8a4.wav
 __pycache__/openai_engine.cpython-313.pyc
 __pycache__/config_manager.cpython-310.pyc
 misc/rvc training samples/was-hitler-an-atheist-ch1-ch3.wav
+audio/__pycache__/__init__.cpython-310.pyc
+audio/__pycache__/audio_combiner.cpython-310.pyc
+audio/__pycache__/rvc_processor.cpython-310.pyc
+.vscode/settings.json
+core/__pycache__/__init__.cpython-310.pyc
+core/__pycache__/pipeline_manager.cpython-310.pyc
+core/__pycache__/section_manager.cpython-310.pyc
+engines/__pycache__/__init__.cpython-310.pyc
+engines/__pycache__/base_engine.cpython-310.pyc
+engines/__pycache__/xtts_engine.cpython-310.pyc
+managers/__pycache__/__init__.cpython-310.pyc
+managers/__pycache__/config_manager.cpython-310.pyc
+managers/__pycache__/project_manager.cpython-310.pyc
+preprocessing/__pycache__/__init__.cpython-310.pyc
+preprocessing/__pycache__/file_extractors.cpython-310.pyc
+preprocessing/__pycache__/text_processor.cpython-310.pyc
