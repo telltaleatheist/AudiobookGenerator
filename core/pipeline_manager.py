@@ -60,15 +60,18 @@ class PipelineManager:
             return False
     
     def _initialize_progress(self, source_file: str, paths: Dict[str, Path], 
-                           config: Dict[str, Any], sections: Optional[List[int]], 
-                           skip_rvc: bool):
-        """Initialize progress tracking for new pipeline run"""
+                        config: Dict[str, Any], sections: Optional[List[int]], 
+                        skip_rvc: bool):
+        """Initialize progress - NO CONFIG STORAGE"""
         self.progress = {
             'status': 'started',
             'start_time': datetime.now().isoformat(),
             'source_file': str(source_file),
             'skip_rvc': skip_rvc,
-            'config': config,
+            'project_name': config['metadata']['project_name'],      # Just basics
+            'batch_name': config['metadata']['batch_name'],
+            'tts_engine': config['metadata']['tts_engine'],
+            'rvc_voice': config['metadata']['rvc_voice'],
             'paths': {k: str(v) for k, v in paths.items()},
             'phases': {
                 'preprocessing': {'complete': False},
@@ -81,8 +84,7 @@ class PipelineManager:
                 'current': None,
                 'remaining': [],
                 'files': {}
-            },
-            'timing': {}
+            }
         }
         self._save_progress()
     
@@ -155,15 +157,6 @@ class PipelineManager:
             if not self._process_single_section(section_num):
                 return False
             
-            # Remove from remaining and add to completed
-            remaining_sections.remove(section_num)
-            sections_info['completed'].append(section_num)
-            sections_info['current'] = None
-            
-            self._save_progress()
-            
-            print(f"✅ Section {section_num} complete ({len(sections_info['completed'])}/{total_sections})")
-        
         self._mark_phase_complete('section_processing')
         return True
     
@@ -217,16 +210,21 @@ class PipelineManager:
             return False
             
     def _run_section_tts(self, section_num: int, section_file: Path) -> bool:
-        """Run TTS engine on a single section"""
+        """Run TTS engine on a single section - CLEANED UP"""
         print(f"  🎤 TTS Generation...")
         
         try:
             from engines import get_engine_processor
-            config = self.progress['config']
+            
+            # Load config from file (don't use stored config)
+            config_path = Path(self.progress['paths']['job_config'])
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
             engine_name = config['metadata']['tts_engine']
             
-            batch_dir = Path(self.progress['paths']['batch_dir'])
-            temp_dir = batch_dir / f"section_{section_num:03d}_temp"
+            # Use single temp folder for all temp work
+            temp_dir = Path(self.progress['paths']['temp_dir'])
             temp_dir.mkdir(exist_ok=True)
             
             # Get engine processor and run
@@ -240,7 +238,9 @@ class PipelineManager:
             # Combine TTS chunks for this section
             from audio.audio_combiner import combine_audio_files
             
-            section_tts_file = batch_dir / f"section_{section_num:03d}_tts.wav"
+            # Save TTS output to sections folder
+            sections_dir = Path(self.progress['paths']['sections_dir'])
+            section_tts_file = sections_dir / f"section_{section_num:03d}_tts.wav"
             silence_gap = config['audio']['silence_gap']
             
             if not combine_audio_files(generated_files, str(section_tts_file), silence_gap):
@@ -314,31 +314,13 @@ class PipelineManager:
             return False
     
     def _run_cleanup(self):
-        """Phase 3: Cleanup temporary files"""
-        print(f"\n🧹 Phase 3: Cleanup")
-        
+        """Delete entire temp folder when done"""
         try:
-            config = self.progress['config']
-            pipeline_config = config.get('pipeline', {})
-            
-            if pipeline_config.get('cleanup_temp_files', True):
-                batch_dir = Path(self.progress['paths']['batch_dir'])
-                
-                # Clean up individual section temp directories
-                for section_temp in batch_dir.glob("section_*_temp"):
-                    if section_temp.is_dir():
-                        import shutil
-                        shutil.rmtree(section_temp)
-                
-                print(f"  ✅ Removed temp files")
-            
-            if pipeline_config.get('cleanup_intermediate_files', True):
-                # Optionally clean up individual section files
-                # (Keep them for now as checkpoints)
-                pass
-            
-            self._mark_phase_complete('cleanup')
-            
+            temp_dir = Path(self.progress['paths']['temp_dir'])
+            if temp_dir.exists():
+                import shutil
+                shutil.rmtree(temp_dir)  # Delete entire temp folder
+                print(f"  ✅ Removed temp directory")
         except Exception as e:
             print(f"⚠️ Cleanup warning: {e}")
     

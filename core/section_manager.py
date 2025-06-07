@@ -158,18 +158,16 @@ class SectionManager:
         
         return sections
     
-    def save_sections(self, sections: List[str], output_dir: Path) -> List[Path]:
-        """Save sections as numbered text files"""
-        output_dir = Path(output_dir)
-        sections_dir = output_dir / "sections"
+    def save_sections(self, sections: List[str], batch_dir: Path) -> List[Path]:
+        """Save sections in the sections directory"""
+        sections_dir = batch_dir / "sections"  # Use sections subfolder
         sections_dir.mkdir(parents=True, exist_ok=True)
         
         section_files = []
         for i, section in enumerate(sections, 1):
-            section_file = sections_dir / f"section_{i:03d}.txt"
+            section_file = sections_dir / f"section_{i:03d}.txt"  # Save here
             with open(section_file, 'w', encoding='utf-8') as f:
                 f.write(section)
             section_files.append(section_file)
         
-        print(f"STATUS: Saved {len(sections)} sections to {sections_dir}", file=sys.stderr)
         return section_files
