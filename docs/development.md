@@ -1,252 +1,438 @@
-# AudiobookGenerator Development Documentation v2.2
+# AudiobookGenerator Development Documentation v3.0
 
 ## Overview
 
-AudiobookGenerator is a sophisticated Python-based audiobook generation system that converts text documents (EPUB, PDF, TXT) into high-quality audiobooks using multiple TTS engines and voice conversion technology. The system features a **dynamic configuration architecture** where all settings are externally controlled via JSON configuration files, eliminating hardcoded parameters.
+AudiobookGenerator is a sophisticated Python-based audiobook generation system that converts text documents (EPUB, PDF, TXT) into high-quality audiobooks using multiple TTS engines and voice conversion technology. The system features a **section-based, resumable pipeline architecture** with dynamic configuration management where all settings are externally controlled via JSON configuration files.
 
-**NEW in v2.2**: **Centralized Config Manager** with no-defaults architecture and universal phrase-aware chunking for XTTS.
+**NEW in v3.0**: **Section-based processing pipeline** with resumable progress, simplified engines with dynamic parameter loading, improved thermal management for sustained AI workloads, and comprehensive error handling.
 
-## TTS Engine Quality Rankings
+## System Requirements
+
+### Software Dependencies
+
+#### Core System
+- **Python**: 3.10.16
+- **PyTorch**: 2.2.1+cu121 (CUDA 12.1)
+- **CUDA**: 12.1 (GPU acceleration required for optimal performance)
+- **FFmpeg**: 7.1.1 (audio processing)
+
+#### Core Python Libraries
+- **NumPy**: 1.22.0
+- **SciPy**: 1.11.4  
+- **torchaudio**: 2.2.1+cu121
+- **librosa**: 0.10.0 (audio processing)
+- **soundfile**: 0.12.1 (audio I/O)
+
+#### Text Processing
+- **beautifulsoup4**: 4.13.4 (HTML/EPUB parsing)
+- **EbookLib**: 0.19 (EPUB processing)
+- **PyMuPDF**: 1.26.0 (PDF processing)
+
+#### TTS Engines
+- **TTS (Coqui XTTS)**: 0.22.0
+- **openai**: 1.84.0
+- **f5-tts**: 1.1.5
+- **edge-tts**: 7.0.2
+- **suno-bark**: 0.0.1a0
+
+#### Voice Conversion
+- **URVC (Ultimate RVC)**: Latest version (command-line interface)
+- **rvc (base package)**: 0.3.5 (underlying dependency)
+
+### Hardware Requirements
+
+#### Minimum System
+- **GPU**: NVIDIA GPU with 6GB+ VRAM (CUDA compatible)
+- **RAM**: 16GB system RAM
+- **Storage**: 20GB+ free space for models and temporary files
+
+#### Recommended System  
+- **GPU**: NVIDIA RTX 3080+ with 10GB+ VRAM
+- **RAM**: 32GB+ system RAM
+- **Storage**: SSD with 50GB+ free space
+- **Cooling**: Adequate case ventilation for sustained AI workloads
+
+#### Thermal Considerations
+⚠️ **Critical**: Sustained TTS + RVC processing generates significant heat. Ensure:
+- GPU temperatures stay below 80°C during long runs
+- Adequate case cooling (especially important for nighttime processing)
+- Monitor with `nvidia-smi` during extended sessions
+- Consider processing in smaller batches if overheating occurs
+
+## TTS Engine Quality Rankings (Updated Based on Testing)
 
 ### 1. **XTTS (Coqui)** - ⭐⭐⭐⭐⭐ BEST LOCAL MODEL
 - **Quality**: Best local TTS model available
-- **Requirements**: Requires RVC post-processing to clean output
-- **Features**: Multilingual, voice cloning, advanced prosody control
+- **Voice Cloning**: Excellent with single reference sample
+- **Requirements**: Requires RVC post-processing for professional quality
+- **Features**: Low-level API access, advanced prosody control, multilingual
+- **Processing**: Section-based with intelligent chunking (no phrase splitting)
 - **Best For**: High-quality audiobooks with custom voices
-- **Note**: Near-perfect when combined with URVC cleaning
+- **Note**: Near-perfect quality when combined with URVC post-processing
 
 ### 2. **OpenAI TTS** - ⭐⭐⭐⭐ PREMIUM CLOUD
-- **Quality**: Excellent cloud-based TTS
-- **Cost**: Paid service (~$15/1M characters)
-- **Features**: Multiple high-quality voices, consistent output
+- **Quality**: Excellent cloud-based TTS with consistent output
+- **Cost**: ~$15 per 1M characters (cost estimation built-in)
+- **Features**: Multiple high-quality voices, fast processing
+- **Limitations**: No voice cloning capability
 - **Best For**: Commercial projects with budget for cloud services
-- **Note**: No voice cloning, but excellent built-in voices
+- **Note**: Excellent built-in voices, no additional processing needed
 
-### 3. **F5-TTS** - ⭐⭐⭐ GOOD LOCAL
-- **Quality**: Good local TTS with voice cloning
-- **Requirements**: Single reference audio file
+### 3. **F5-TTS** - ⭐⭐⭐ GOOD LOCAL WITH VOICE CLONING
+- **Quality**: Good local TTS with voice cloning capabilities
+- **Voice Cloning**: Single reference audio file with auto-transcription
 - **Features**: Fast single-pass processing, decent voice cloning
+- **Processing**: Can handle full sections or chunked processing
 - **Best For**: Quick voice cloning projects
-- **Note**: Simpler than XTTS but lower quality output
+- **Note**: Simpler setup than XTTS but lower overall quality
 
 ### 4. **EdgeTTS (Microsoft)** - ⭐⭐ FREE CLOUD
-- **Quality**: Decent cloud-based TTS
-- **Cost**: Free (with usage limits)
-- **Features**: Multiple voices, basic prosody control
-- **Best For**: Testing and free projects
-- **Note**: No voice cloning, limited customization
+- **Quality**: Decent cloud-based TTS with multiple voices
+- **Cost**: Free (with usage limits and rate limiting)
+- **Features**: Multiple voices, basic prosody control, async processing
+- **Limitations**: No voice cloning, limited customization
+- **Best For**: Testing, free projects, or backup engine
+- **Note**: Good for validation but not production quality
 
-### 5. **Bark** - ⭐ FAIR LOCAL
-- **Quality**: Fair quality, inconsistent output
-- **Features**: Voice presets, some emotional control
+### 5. **Bark** - ⭐ FAIR LOCAL (SIMPLIFIED)
+- **Quality**: Fair quality with simplified implementation  
+- **Features**: Voice presets, basic pronunciation fixes
 - **Issues**: Prone to artifacts, inconsistent prosody
-- **Best For**: Experimental projects only
-- **Note**: Generally not recommended for production use
+- **Implementation**: Simplified version with essential features only
+- **Best For**: Experimental projects or specific voice requirements
+- **Note**: Not recommended for production audiobooks
 
-## URVC (Ultimate RVC) - Audio Enhancement System
+## URVC (Ultimate RVC) - Professional Voice Enhancement
 
-### Quality Enhancement
-- **Purpose**: Cleans up TTS output to professional quality
-- **Impact**: Transforms mediocre TTS into high-quality speech
-- **Default Model**: "Sigma Male Narrator" - top-tier voice conversion
-- **Custom Training**: Train your own voice models for personalized output
+### Quality Enhancement System
+- **Purpose**: Transforms raw TTS output into professional-quality speech
+- **Impact**: Essential for achieving broadcasting-quality audiobooks
+- **Default Model**: "Sigma Male Narrator" - premium voice conversion model
+- **Custom Training**: Support for training personalized voice models
 
-### Why RVC is Essential
-Nearly all TTS models produce raw output with:
-- ❌ Inconsistent prosody
-- ❌ Artifacts and glitches  
-- ❌ Unnatural intonation
-- ❌ Poor voice consistency
+### Why URVC is Essential
+Raw TTS output typically suffers from:
+- ❌ Inconsistent prosody and intonation
+- ❌ Audio artifacts and glitches  
+- ❌ Unnatural speech patterns
+- ❌ Poor voice consistency across long content
 
 URVC post-processing delivers:
-- ✅ Professional voice quality
-- ✅ Consistent tone and prosody
-- ✅ Artifact removal
-- ✅ Natural speech patterns
+- ✅ Professional broadcasting quality
+- ✅ Consistent tone and prosody throughout
+- ✅ Artifact removal and audio enhancement
+- ✅ Natural speech flow and rhythm
+- ✅ Thermal management during processing
 
-## System Architecture
+### Thermal Management for URVC
+⚠️ **Important**: URVC processing is GPU-intensive and generates significant heat:
+- Monitor GPU temperatures during long sessions
+- Process smaller batches if temperatures exceed 80°C
+- Ensure adequate cooling, especially during nighttime processing
+- Consider air conditioning or additional case fans for extended runs
 
-### Core Components
+## System Architecture (Section-Based Pipeline)
 
-1. **Main Entry Point**: `AudiobookGenerator.py` - Command-line interface and orchestration
-2. **Config Manager**: `config_manager.py` - **NEW**: Centralized configuration with no-defaults architecture
-3. **Project Management**: `project_manager.py` - Handles project structure and file management
-4. **Pipeline Management**: `pipeline_manager.py` - Orchestrates the 5-phase processing pipeline
-5. **Dynamic Engine Registry**: `engine_registry.py` - Plugin system with dynamic parameter loading
-6. **Text Preprocessing**: `preprocessing.py` + `preprocessing_pdf.py` - Text extraction and cleaning
-7. **TTS Engines**: Individual engine implementations with universal phrase-aware chunking
-8. **Audio Processing**: `audio_processor.py` - Audio combination, RVC conversion, and post-processing
+### Core Philosophy: Section-Based Processing
 
-### Centralized Configuration Management (NEW v2.2)
+**Key Innovation**: Process audiobooks in manageable ~30-minute sections rather than as monolithic files.
 
-**Key Innovation**: NO configuration defaults in code. All defaults come from `default_config.json`.
+#### Benefits:
+- ✅ **Resumable**: Can restart from any failed section
+- ✅ **Memory Efficient**: Prevents GPU memory exhaustion
+- ✅ **Thermal Friendly**: Natural cooling breaks between sections
+- ✅ **Progress Tracking**: Clear progress indicators
+- ✅ **Quality Control**: Can re-process individual sections if needed
 
-#### Config Manager System
+### Processing Pipeline (3 Phases)
 
-```bash
-# Create default config template
-python config_manager.py --create-default
+#### Phase 1: Preprocessing and Section Creation
+- Extract and clean text from source documents
+- Apply engine-specific text preprocessing (pronunciation fixes, etc.)
+- Split text into ~30-minute sections (configurable)
+- Save section files for processing
 
-# Create new project with config
-python config_manager.py --create-project mybook
+#### Phase 2: Section Processing Loop
+For each section:
+1. **TTS Generation**: Convert section text to audio chunks
+2. **Audio Combination**: Combine chunks with intelligent silence gaps
+3. **RVC Processing**: Apply voice conversion using URVC
+4. **Master Combination**: Add completed section to final audiobook
+5. **Progress Update**: Mark section complete for resume capability
 
-# Copy default config to existing project  
-python config_manager.py --copy-to-project mybook
+#### Phase 3: Cleanup
+- Remove temporary files
+- Finalize output audio
+- Generate completion report
 
-# Validate configuration file
-python config_manager.py --validate output/mybook/config/config.json
-```
-
-#### No-Defaults Architecture
-
-**Core Principle**: Eliminate caching issues and configuration inconsistencies.
-
-- ✅ **Single source of truth**: `default_config.json` contains ALL defaults
-- ✅ **Graceful failure**: Missing config values show helpful error messages  
-- ✅ **No caching issues**: All settings loaded fresh from JSON files
-- ✅ **Easy debugging**: Always know exactly what settings are being used
-
-#### Error Handling
-```python
-# Engines now fail gracefully with helpful messages
-ConfigError: Missing required XTTS configuration: temperature
-💡 Check your config.json file and ensure all XTTS settings are present
-💡 Run: python config_manager.py --create-default
-```
-
-### Processing Pipeline (5 Phases)
-
-1. **Config Snapshot Creation**: Complete configuration captured before processing begins
-2. **Preprocessing**: Extract and clean text from source documents with universal phrase preservation
-3. **TTS Generation**: Convert text to speech using selected TTS engine with dynamic parameters
-4. **Audio Combination**: Combine individual audio chunks with intelligent silence gaps
-5. **RVC Conversion**: Apply voice conversion using selected RVC model
-6. **Cleanup**: Remove temporary files and finalize output
-
-## Project Structure
+### File Structure (Clean Organization)
 
 ```
 output/
 ├── project_name/
 │   ├── source/           # Input files (.epub, .pdf, .txt)
 │   ├── samples/          # Voice reference audio for cloning
+│   │   ├── sample1.wav   # Reference audio file
+│   │   └── sample1.txt   # Optional transcript (F5-TTS)
 │   ├── config/           # Project configuration
-│   │   └── config.json   # Project config (copied from default_config.json)
+│   │   └── config.json   # Project settings
 │   ├── jobs/             # Processing batches
 │   │   └── batch_name/
-│   │       ├── config.json         # COMPLETE config snapshot
-│   │       ├── config_summary.txt  # Human-readable summary
-│   │       ├── progress.log        # Processing progress
-│   │       ├── temp_files/         # Temporary processing files
-│   │       ├── batch_name_tts.wav  # Combined TTS audio
-│   │       └── batch_name_rvc.wav  # Final RVC processed audio
+│   │       ├── clean_text.txt           # Preprocessed text
+│   │       ├── config.json              # Job config snapshot
+│   │       ├── progress.log             # Processing progress
+│   │       ├── project_batch_master.wav # Final output
+│   │       ├── sections/                # Organized section files
+│   │       │   ├── section_001.txt      # Section text
+│   │       │   ├── section_001_tts.wav  # TTS output
+│   │       │   └── section_001_rvc.wav  # RVC output
+│   │       └── temp_files/              # Temporary processing files
 │   └── README.md
-├── default_config.json   # Master configuration template
-├── config_manager.py     # NEW: Centralized config management
+```
+
+### Core Components
+
+1. **Main Entry Point**: `AudiobookGenerator.py` - Command-line interface
+2. **Pipeline Manager**: `pipeline_manager.py` - Orchestrates section-based processing
+3. **Section Manager**: `section_manager.py` - Smart text splitting with duration estimation
+4. **Project Manager**: `project_manager.py` - Project structure and configuration
+5. **Engine Registry**: `engines/__init__.py` - Dynamic engine loading and registration
+6. **Individual Engines**: Simplified implementations with dynamic parameter loading
+7. **Audio Processing**: `audio_combiner.py`, `rvc_processor.py` - Audio handling
+8. **Text Processing**: `text_processor.py`, `file_extractors.py` - Text extraction and cleaning
+
+### Configuration Management (No-Defaults Architecture)
+
+**Core Principle**: All configuration parameters stored in JSON files, no hardcoded defaults in code.
+
+#### Config File Hierarchy
+1. **Default Config**: `default_config.json` - Master template
+2. **Project Config**: `output/project/config/config.json` - Project-specific settings  
+3. **Job Config**: `output/project/jobs/batch/config.json` - Complete snapshot of job settings
+
+#### Dynamic Parameter Loading
+```python
+# Engines automatically detect and use ANY parameter from config
+engine_config = extract_engine_config(config, 'xtts', verbose=True)
+# All parameters automatically passed to TTS generation function
+generation_params = create_generation_params(base_params, engine_config, filter_function=tts_func)
 ```
 
 ## Installation and Setup
 
 ### Prerequisites
 ```bash
-# Python 3.8+ required
-python --version
+# Verify Python version
+python --version  # Should be 3.10+
 
-# Install core dependencies
-pip install pathlib datetime json scipy torchaudio beautifulsoup4 ebooklib pymupdf
+# Install CUDA toolkit if not present
+# https://developer.nvidia.com/cuda-downloads
+```
+
+### Core Dependencies
+```bash
+# Install core audio and text processing libraries
+pip install scipy==1.11.4 torchaudio==2.2.1 beautifulsoup4==4.13.4 
+pip install ebooklib==0.19 PyMuPDF==1.26.0 librosa==0.10.0 soundfile==0.12.1
 ```
 
 ### TTS Engine Installation
 
-#### 1. XTTS (Recommended)
+#### 1. XTTS (Recommended for Best Quality)
 ```bash
-pip install TTS
+pip install TTS==0.22.0
 # Test installation
 python -c "from TTS.api import TTS; print('XTTS installed successfully')"
 ```
 
-#### 2. OpenAI TTS (Paid)
+#### 2. OpenAI TTS (Premium Cloud Option)
 ```bash
-pip install openai
+pip install openai==1.84.0
 # Set API key
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-#### 3. F5-TTS
+#### 3. F5-TTS (Good Local Alternative)
 ```bash
-pip install f5-tts
+pip install f5-tts==1.1.5
 # Verify installation
-python -c "import f5_tts; print('F5-TTS installed successfully')"
+python -c "from f5_tts.api import F5TTS; print('F5-TTS installed successfully')"
 ```
 
-#### 4. EdgeTTS (Free)
+#### 4. EdgeTTS (Free Testing Option)
 ```bash
-pip install edge-tts
+pip install edge-tts==7.0.2
 # Test installation
 edge-tts --list-voices | head -5
 ```
 
-#### 5. Bark (Optional)
+#### 5. Bark (Optional/Experimental)
 ```bash
-pip install bark-tts
+pip install suno-bark==0.0.1a0
 # Note: Large model downloads on first use
 ```
 
-### URVC Installation (Essential for Quality)
+### URVC Installation (Essential for Professional Quality)
 
-#### Option 1: pip install (Recommended)
+#### Installation
 ```bash
-pip install urvc
-# Verify installation
+# Install URVC (Ultimate RVC)
+# Follow installation instructions from URVC repository
+# Typically installed via git clone + pip install
+```
+
+#### Verify Installation
+```bash
 urvc --help
+# Should show URVC command options
 ```
 
-#### Option 2: Manual Installation
-```bash
-# Clone repository
-git clone https://github.com/JarodMica/ultimate-rvc
-cd ultimate-rvc
-pip install -e .
-```
+#### Download Voice Models
+- Download "Sigma Male Narrator" model (recommended default)
+- Place models in appropriate URVC models directory
+- Test with sample audio file
 
-#### Download RVC Models
+### FFmpeg Installation
 ```bash
-# Download the default "Sigma Male Narrator" model
-# Follow URVC documentation for model installation
-# Models are typically placed in ~/.urvc/models/
+# Windows (using chocolatey)
+choco install ffmpeg
+
+# macOS
+brew install ffmpeg
+
+# Linux
+sudo apt install ffmpeg
+
+# Verify installation
+ffmpeg -version  # Should show version 7.1.1+
 ```
 
 ### System Setup
 
 1. **Create default configuration**:
    ```bash
-   python config_manager.py --create-default
+   python AudiobookGenerator.py --create-default-config
    ```
 
-2. **Install FFmpeg** (required for audio processing):
-   ```bash
-   # Windows (using chocolatey)
-   choco install ffmpeg
-   
-   # macOS
-   brew install ffmpeg
-   
-   # Linux
-   sudo apt install ffmpeg
-   ```
-
-3. **Create first project**:
+2. **Create first project**:
    ```bash
    python AudiobookGenerator.py --init mybook
    ```
 
-## Multi-Voice RVC System
+3. **Add source material and voice samples**:
+   ```bash
+   # Copy book file to output/mybook/source/
+   # Copy voice sample to output/mybook/samples/
+   ```
 
-### Architecture Overview
+## Command Line Interface
 
-The system supports **unlimited RVC voice profiles** with automatic discovery and dynamic configuration management. Each voice profile has its own configuration section that can be independently managed.
+### Project Lifecycle
 
-### Configuration Structure
+#### Initial Setup
+```bash
+# Create new project
+python AudiobookGenerator.py --init mybook
+
+# Add source file
+python AudiobookGenerator.py --project mybook --input book.epub
+
+# Add voice samples (copy to output/mybook/samples/)
+```
+
+#### Basic Processing (Recommended)
+```bash
+# Best quality: XTTS + URVC
+python AudiobookGenerator.py --project mybook --tts-engine xtts --rvc-voice sigma_male_narrator
+
+# Free option: EdgeTTS only
+python AudiobookGenerator.py --project mybook --tts-engine edge --skip-rvc
+
+# Cloud option: OpenAI TTS
+python AudiobookGenerator.py --project mybook --tts-engine openai --engine-voice nova
+```
+
+#### Advanced Options
+```bash
+# Process specific sections
+python AudiobookGenerator.py --project mybook --tts-engine xtts --sections 1 2 3
+
+# Custom batch naming
+python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name "high-quality-test"
+
+# Skip RVC processing
+python AudiobookGenerator.py --project mybook --tts-engine xtts --skip-rvc
+
+# Resume failed job (automatic - just re-run same command)
+python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name "failed-job"
+```
+
+### Voice Management
+
+#### RVC Voice Selection
+```bash
+# List available RVC voices
+python AudiobookGenerator.py --project mybook --list-rvc-voices
+
+# Use specific RVC voice
+python AudiobookGenerator.py --project mybook --rvc-voice sigma_male_narrator
+
+# Use custom trained voice
+python AudiobookGenerator.py --project mybook --rvc-voice my_custom_voice
+```
+
+#### TTS Engine Voice Selection
+```bash
+# OpenAI voices
+python AudiobookGenerator.py --project mybook --tts-engine openai --engine-voice nova
+python AudiobookGenerator.py --project mybook --tts-engine openai --engine-voice alloy
+
+# EdgeTTS voices
+python AudiobookGenerator.py --project mybook --tts-engine edge --engine-voice en-US-JennyNeural
+python AudiobookGenerator.py --project mybook --tts-engine edge --engine-voice en-GB-SoniaNeural
+
+# Bark voices
+python AudiobookGenerator.py --project mybook --tts-engine bark --engine-voice v2/en_speaker_6
+```
+
+## Voice Cloning and Reference Audio
+
+### Automatic Sample Detection
+
+The system automatically detects voice samples from the `samples/` directory:
+
+```
+project/samples/
+├── my_voice.wav           # Primary reference audio
+├── my_voice.txt          # Optional transcript (F5-TTS)
+├── speaker2.wav          # Additional samples (XTTS)
+└── speaker2.txt          # Optional transcript
+```
+
+#### Engine-Specific Behavior:
+- **XTTS**: Uses all `.wav` files (supports multiple references for better quality)
+- **F5-TTS**: Uses first `.wav` file + matching `.txt` file (auto-transcribe if no text file)
+- **OpenAI/Edge/Bark**: Use built-in voices (ignore samples directory)
+
+### Voice Sample Quality Guidelines
+
+#### For Best Results:
+- **Duration**: 30 seconds to 2 minutes of clear speech
+- **Quality**: Studio-quality recordings preferred
+- **Content**: Varied speech content (not just single words)
+- **Format**: WAV format, 44.1kHz or higher sample rate
+- **Clarity**: No background noise, echo, or artifacts
+
+#### XTTS Multiple Samples:
+- Use 2-5 different audio samples for best voice cloning
+- Samples should show different emotions/speaking styles
+- Total combined duration: 2-10 minutes
+
+## Configuration System
+
+### Multi-Voice RVC System
+
+The system supports unlimited RVC voice profiles with automatic discovery:
 
 ```json
 {
@@ -257,533 +443,95 @@ The system supports **unlimited RVC voice profiles** with automatic discovery an
     "clean_strength": 0.3,
     "autotune_voice": true
   },
-  "rvc_my_voice": {
-    "model": "my_voice",
-    "n_semitones": -2,
-    "index_rate": 0.35,
-    "protect_rate": 0.15,
-    "rms_mix_rate": 0.4
-  },
   "rvc_sigma_male_narrator": {
     "model": "Sigma Male Narrator",
-    "n_semitones": -4,
+    "n_semitones": -2,
     "index_rate": 0.4,
     "protect_rate": 0.4,
-    "rms_mix_rate": 0.5
+    "rms_mix_rate": 0.5,
+    "split_voice": true,
+    "autotune_strength": 0.3
   },
   "rvc_custom_voice": {
-    "model": "Custom Voice Model",
+    "model": "My Custom Voice",
     "n_semitones": 0,
-    "index_rate": 0.45,
-    "protect_rate": 0.3
+    "index_rate": 0.35,
+    "protect_rate": 0.25,
+    "rms_mix_rate": 0.4
   }
 }
 ```
 
-### Voice Management Features
+### Adding New RVC Voices
 
-#### Command Line Interface
-```bash
-# List available voices
-python AudiobookGenerator.py --project mybook --list-rvc-voices
-
-# Select specific voice
-python AudiobookGenerator.py --project mybook --rvc-voice sigma_male_narrator
-
-# Use global speed override
-python AudiobookGenerator.py --project mybook --rvc-voice custom_voice --speed 1.1
-
-# Legacy support (deprecated)
-python AudiobookGenerator.py --project mybook --rvc-model sigma_male_narrator
-```
-
-#### Adding New Voices
-
-Adding new RVC voices is completely **plug-and-play**:
+Adding new voices is completely plug-and-play:
 
 1. **Add configuration section**:
 ```json
 {
-  "rvc_celebrity_voice": {
-    "model": "Celebrity Voice Model",
+  "rvc_new_voice": {
+    "model": "New Voice Model Name",
     "n_semitones": 0,
-    "index_rate": 0.3,
-    "protect_rate": 0.25
+    "index_rate": 0.4,
+    "protect_rate": 0.3,
+    "rms_mix_rate": 0.5
   }
 }
 ```
 
 2. **Voice automatically available**:
 ```bash
-python AudiobookGenerator.py --project mybook --rvc-voice celebrity_voice
-```
-
-## TTS Engine System
-
-### Universal Phrase-Aware Chunking (NEW v2.2)
-
-All engines now use intelligent chunking that prevents splitting technical terms and maintains natural speech flow:
-
-- ✅ **Preserves technical phrases**: "electromagnetic signature" stays together
-- ✅ **Respects dialogue boundaries**: Proper speaker transitions
-- ✅ **Universal patterns**: Works with any text content
-- ✅ **No dictionaries**: Uses grammatical patterns, not hardcoded terms
-
-### Supported TTS Engines
-
-#### 1. XTTS (`xtts_engine.py`) - ⭐⭐⭐⭐⭐ BEST
-- **Type**: Local neural TTS with voice cloning
-- **Quality**: Best local model available, requires RVC for perfection
-- **Features**: Multilingual, multiple reference samples, advanced prosody control
-- **NEW**: Universal phrase-aware chunking prevents splitting technical terms
-- **Dynamic Parameters**: All XTTS API parameters automatically supported
-
-#### 2. OpenAI TTS (`openai_engine.py`) - ⭐⭐⭐⭐ PREMIUM
-- **Type**: Premium cloud TTS service
-- **Quality**: Excellent professional voices
-- **Features**: Multiple high-quality voices, consistent output
-- **Cost**: ~$15 per 1M characters
-- **Limitations**: No voice cloning capability
-
-#### 3. F5-TTS (`f5_engine.py`) - ⭐⭐⭐ GOOD
-- **Type**: Local voice cloning with reference audio
-- **Features**: Single-pass processing, voice cloning with minimal samples
-- **Quality**: Good voice cloning, faster than XTTS
-- **Dynamic Parameters**: All F5-TTS API parameters automatically supported
-
-#### 4. EdgeTTS (`edge_engine.py`) - ⭐⭐ FREE
-- **Type**: Free Microsoft cloud TTS service
-- **Features**: Multiple voices, basic prosody control
-- **Limitations**: No voice cloning, limited customization
-- **Cost**: Free with usage limits
-
-#### 5. Bark (`bark_engine.py`) - ⭐ FAIR
-- **Type**: Local neural TTS with voice presets
-- **Quality**: Fair quality, prone to artifacts
-- **Features**: Voice presets, some emotional control
-- **Issues**: Inconsistent prosody, not recommended for production
-
-### Engine Registration and Loading
-
-```python
-# Engines automatically register with no hardcoded config
-def register_xtts_engine():
-    register_engine(
-        name='xtts',
-        processor_func=process_xtts_text_file
-        # NO default_config parameter needed!
-    )
-```
-
-## URVC (Ultimate RVC) Commands Reference
-
-### Main Commands
-
-#### Voice Conversion
-```bash
-# Basic voice conversion
-urvc generate convert-voice input.wav ./output/ "Sigma Male Narrator"
-
-# Voice conversion with pitch shift (male to female)
-urvc generate convert-voice input.wav ./output/ "My Voice" --n-octaves 1
-
-# High-quality conversion with enhancement
-urvc generate convert-voice input.wav ./output/ "Sigma Male Narrator" \
-  --split-voice --clean-voice --autotune-voice \
-  --f0-method crepe --clean-strength 0.3
-```
-
-#### Speech Generation Pipeline
-```bash
-# Full TTS + RVC pipeline (EdgeTTS -> RVC conversion)
-urvc generate speech run-pipeline "Hello world" "Sigma Male Narrator"
-
-# Pipeline with custom settings
-urvc generate speech run-pipeline "Hello world" "My Voice" \
-  --tts-voice en-US-JennyNeural \
-  --f0-method crepe \
-  --clean-speech \
-  --output-format wav
-```
-
-### Voice Conversion Parameters
-
-#### Required Arguments
-- `voice_track` - Path to audio file to convert
-- `directory` - Output directory for converted audio
-- `model_name` - Name of RVC model to use
-
-#### Main Options
-```bash
---n-octaves INTEGER        # Octaves to pitch-shift (1 for male→female, -1 for female→male)
---n-semitones INTEGER      # Semi-tones to pitch-shift (fine-tuning)
---f0-method [rmvpe|crepe|crepe-tiny|fcpe]  # Pitch extraction method
---index-rate FLOAT         # Voice model influence rate (0-1, default: 0.3)
---rms-mix-rate FLOAT       # Volume envelope blending (0-1, default: 1.0)
---protect-rate FLOAT       # Consonant/breathing protection (0-0.5, default: 0.33)
---hop-length INTEGER       # CREPE pitch checking frequency (1-512, default: 128)
-```
-
-#### Voice Enhancement Options
-```bash
---split-voice              # Split voice into segments for better quality
---autotune-voice          # Apply autotune to converted voice
---autotune-strength FLOAT # Autotune intensity (0-1, default: 1.0)
---clean-voice             # Apply noise reduction algorithms
---clean-strength FLOAT    # Cleaning intensity (0-1, default: 0.7)
-```
-
-### Training Your Own Voice Models
-
-#### 1. Prepare Dataset
-```bash
-# Create dataset from audio files
-urvc train populate-dataset my_voice /path/to/audio/files
-```
-
-#### 2. Preprocess Dataset
-```bash
-# Basic preprocessing
-urvc train preprocess-dataset my_voice /path/to/audio/files
-
-# High-quality dataset (clean studio recordings)
-urvc train preprocess-dataset my_voice /path/to/audio/files \
-  --sample-rate 48000 \
-  --split-method Skip \
-  --no-filter-audio \
-  --no-clean-audio
-
-# Low-quality dataset (phone recordings, background noise)
-urvc train preprocess-dataset my_voice /path/to/audio/files \
-  --sample-rate 40000 \
-  --split-method Automatic \
-  --filter-audio \
-  --clean-audio \
-  --clean-strength 0.8
-```
-
-#### 3. Extract Features
-```bash
-urvc train extract-features my_voice
-```
-
-#### 4. Train Model
-```bash
-urvc train run-training my_voice
-```
-
-#### Training Tips
-- **Dataset Quality**: Higher quality input = better voice model
-- **Duration**: Aim for 10+ minutes of clean speech per model
-- **Consistency**: Use consistent recording conditions
-- **Content**: Varied speech content improves model quality
-- **File Format**: WAV files work best
-
-## Voice Cloning and Reference Audio
-
-### Automatic Sample Detection
-
-The system automatically detects voice samples:
-
-```
-project/samples/
-├── my_voice.wav           # Audio file
-├── my_voice.txt          # Optional: transcript for F5-TTS
-├── speaker2.wav          # Multiple samples supported by XTTS
-└── speaker2.txt
-```
-
-**Detection Logic:**
-- **XTTS**: Uses all `.wav` files (supports multiple references)
-- **F5-TTS**: Uses first `.wav` + matching `.txt` file (auto-transcribe if no text)
-- **OpenAI/Edge/Bark**: Use built-in voices (ignore samples directory)
-
-## Text Processing and Preprocessing
-
-### Multi-Format Support
-
-#### Enhanced PDF Processing
-- **Hierarchical Navigation**: Chapter → Page → Word selection
-- **Interactive Start Points**: Choose exact start location
-- **Chapter Detection**: Bookmarks, text patterns, intelligent fallback
-
-#### EPUB Processing  
-- **Section-based extraction** with granular selection
-- **Interactive start point selection**
-
-#### Universal Text Cleaning
-- **Phonetic pronunciation fixes** for all non-SSML engines
-- **Configurable text preprocessing** per engine
-- **Smart punctuation and abbreviation handling**
-- **Universal phrase preservation** prevents splitting technical terms
-
-## Command Line Interface
-
-### Core Usage Patterns
-
-```bash
-# Project lifecycle
-python AudiobookGenerator.py --init mybook
-python AudiobookGenerator.py --project mybook --input book.epub
-python AudiobookGenerator.py --project mybook --tts-engine xtts --rvc-voice sigma_male_narrator
-
-# Voice management
-python AudiobookGenerator.py --project mybook --list-rvc-voices
-python AudiobookGenerator.py --project mybook --rvc-voice custom_voice
-python AudiobookGenerator.py --project mybook --rvc-voice sigma_male_narrator --speed 1.1
-
-# Advanced features
-python AudiobookGenerator.py --project mybook --interactive-start
-python AudiobookGenerator.py --project mybook --sections 1 2 3
-python AudiobookGenerator.py --project mybook --batch-name "quality-test"
-```
-
-### TTS Engine Selection
-
-```bash
-# XTTS (Best local model)
-python AudiobookGenerator.py --project mybook --tts-engine xtts --rvc-voice sigma_male_narrator
-
-# OpenAI (Premium cloud)
-python AudiobookGenerator.py --project mybook --tts-engine openai --engine-voice nova
-
-# F5-TTS (Good local)
-python AudiobookGenerator.py --project mybook --tts-engine f5
-
-# EdgeTTS (Free cloud)
-python AudiobookGenerator.py --project mybook --tts-engine edge --engine-voice en-US-JennyNeural
-
-# Bark (Fair local)
-python AudiobookGenerator.py --project mybook --tts-engine bark --engine-voice v2/en_speaker_6
-```
-
-### Universal Voice Parameter
-
-The `--engine-voice` parameter works with any TTS engine:
-
-```bash
-# OpenAI voices
---engine-voice nova
---engine-voice alloy
---engine-voice echo
-
-# EdgeTTS voices  
---engine-voice en-US-JennyNeural
---engine-voice en-GB-SoniaNeural
-
-# Bark voices
---engine-voice v2/en_speaker_6
---engine-voice v2/en_speaker_9
-
-# XTTS built-in speakers (if available)
---engine-voice speaker_1
-```
-
-## Configuration Snapshots and Analysis
-
-### Job-Level Configuration Snapshots
-
-**Every job creates:**
-1. **Complete config snapshot**: `job/config.json` - Exact settings used
-2. **Human-readable summary**: `job/config_summary.txt` - Easy to read
-3. **Processing log**: `job/progress.log` - Timing and status info
-
-### Example Config Summary
-```txt
-=== AUDIOBOOK GENERATION CONFIG SUMMARY ===
-Generated: 2025-06-05 15:30:45
-
-=== JOB METADATA ===
-Project: mybook
-Batch: complete
-TTS Engine: xtts
-RVC Voice: sigma_male_narrator
-Sections: All
-
-=== XTTS ENGINE SETTINGS ===
-temperature: 0.5
-repetition_penalty: 7.0
-top_k: 15
-top_p: 0.6
-chunk_max_chars: 249
-
-=== RVC GLOBAL SETTINGS ===
-speed_factor: 1.0
-f0_method: crepe
-clean_voice: true
-
-=== RVC VOICE SETTINGS (sigma_male_narrator) ===
-model: Sigma Male Narrator
-n_semitones: -4
-index_rate: 0.4
-protect_rate: 0.4
-```
-
-## Development Workflow
-
-### Configuration Changes (No Code Required)
-
-1. **Edit `default_config.json`** - Add any new parameters
-2. **Copy to project**: `python config_manager.py --copy-to-project mybook`  
-3. **Test immediately** - Parameters automatically detected and used
-
-### Engine Modifications (Rare)
-
-```python
-# NEW pattern for engines
-from config_manager import ConfigManager, ConfigError
-
-def process_engine(config):
-    config_manager = ConfigManager()
-    
-    try:
-        required_fields = ['temperature', 'model_name', 'speed']
-        for field in required_fields:
-            if field not in config['engine_name']:
-                raise ConfigError(f"Missing required configuration: {field}")
-    except ConfigError as e:
-        print(f"❌ Configuration Error: {e}")
-        print(f"💡 Run: python config_manager.py --create-default")
-        return []
-```
-
-### Adding New Parameters
-
-**Old Way (Required Code Changes):**
-1. Edit engine Python file
-2. Add parameter to hardcoded config dictionary
-3. Add parameter handling in generation function
-4. Test and deploy
-
-**New Way (No Code Changes Required):**
-1. Add parameter to `default_config.json`
-2. Parameter automatically detected and used
-3. Done!
-
-### Adding New RVC Voices
-
-**Super Simple Process:**
-1. **Add config section**:
-```json
-{
-  "rvc_new_voice": {
-    "model": "New Voice Model",
-    "n_semitones": 0,
-    "index_rate": 0.4
-  }
-}
-```
-
-2. **Voice immediately available**:
-```bash
 python AudiobookGenerator.py --project mybook --rvc-voice new_voice
 ```
 
-### Testing and Optimization
+### Dynamic Parameter System
 
-1. **Create test project**:
-   ```bash
-   python AudiobookGenerator.py --init test-project
-   ```
+All engines support dynamic parameter loading - any parameter in the config file is automatically detected and used:
 
-2. **Add test content and run**:
-   ```bash
-   python AudiobookGenerator.py --project test-project --tts-engine xtts --rvc-voice sigma_male_narrator
-   ```
-
-3. **Compare config snapshots** to find optimal settings
-
-4. **Update `default_config.json`** with best parameters for future projects
-
-## Troubleshooting
-
-### Configuration Issues
-```bash
-# Missing config values
-❌ ConfigError: Missing required XTTS configuration: temperature
-✅ Solution: python config_manager.py --create-default
-
-# Cache issues with old configs  
-❌ Settings not updating between runs
-✅ Solution: Config manager eliminates caching - settings load fresh each time
-
-# RVC voice not found
-❌ RVC voice 'my_voice' not found!  
-✅ Solution: python AudiobookGenerator.py --project mybook --list-rvc-voices
-```
-
-### TTS Engine Issues
-```bash
-# XTTS installation
-❌ ModuleNotFoundError: No module named 'TTS'
-✅ Solution: pip install TTS
-
-# OpenAI API key
-❌ OpenAI API key not found
-✅ Solution: export OPENAI_API_KEY="your-key-here"
-
-# EdgeTTS network issues
-❌ Connection timeout
-✅ Solution: Check internet connection, try again
-```
-
-### RVC Issues
-```bash
-# URVC not found
-❌ Command 'urvc' not found
-✅ Solution: pip install urvc
-
-# RVC model missing
-❌ Model 'Sigma Male Narrator' not found
-✅ Solution: Download and install RVC models
-
-# Audio quality issues
-❌ Output sounds robotic
-✅ Solution: Adjust protect_rate, index_rate, and clean_strength
-```
-
-### Audio Quality Issues
-```bash
-# High-pitched dialogue
-✅ Lower temperature: 0.5, top_p: 0.6, top_k: 15
-
-# Technical term mispronunciation  
-✅ Universal chunking algorithm now preserves technical phrases
-
-# Long pauses between chunks
-✅ Adjust silence gaps: silence_gap_sentence: 0.3, silence_gap_dramatic: 0.45
-
-# Robotic RVC output
-✅ Adjust RVC settings: protect_rate: 0.4, index_rate: 0.3, clean_strength: 0.3
-```
-
-## Performance and Quality Optimization
-
-### Recommended Settings by Engine
-
-#### XTTS (Best Quality)
 ```json
 {
   "xtts": {
-    "temperature": 0.5,
-    "repetition_penalty": 7.0,
+    "temperature": 0.65,
+    "repetition_penalty": 5.5,
     "top_k": 15,
-    "top_p": 0.6,
-    "chunk_max_chars": 249,
-    "gpt_cond_len": 12
+    "top_p": 0.75,
+    "speed": 0.98,
+    "any_new_parameter": "automatically_used"
   }
 }
 ```
 
-#### RVC Post-Processing (Essential)
+## Performance Optimization
+
+### Recommended Settings by Engine
+
+#### XTTS (Optimal Quality)
+```json
+{
+  "xtts": {
+    "temperature": 0.65,
+    "repetition_penalty": 5.5,
+    "top_k": 15,
+    "top_p": 0.75,
+    "chunk_max_chars": 250,
+    "reload_model_every_chunks": 3,
+    "speed": 0.98,
+    "gpt_cond_len": 60,
+    "max_ref_len": 64
+  }
+}
+```
+
+#### RVC Post-Processing (Essential for Quality)
 ```json
 {
   "rvc_sigma_male_narrator": {
     "model": "Sigma Male Narrator",
-    "n_semitones": -4,
+    "n_semitones": -2,
     "f0_method": "crepe",
     "index_rate": 0.4,
     "protect_rate": 0.4,
+    "rms_mix_rate": 0.5,
     "clean_voice": true,
     "clean_strength": 0.3,
     "autotune_voice": true,
@@ -792,58 +540,244 @@ python AudiobookGenerator.py --project mybook --rvc-voice new_voice
 }
 ```
 
-### Memory Management
-- **Automatic model reloading** (configurable per engine)
-- **GPU memory clearing** between chunks
-- **Garbage collection** with configurable frequency
+### Thermal Management Strategies
 
-### Quality Control
-- **Universal phrase preservation** prevents splitting technical terms
-- **Intelligent silence gaps** based on content context
-- **Voice consistency monitoring**
-- **Audio normalization** and enhancement
+#### For Long Audiobooks (5+ hours):
+1. **Monitor temperatures**: Use `nvidia-smi` to watch GPU temps
+2. **Process in sections**: Let system cool between sections
+3. **Nighttime considerations**: Ensure adequate cooling without AC
+4. **Batch processing**: Process 3-5 sections, pause, repeat
+
+#### Temperature Thresholds:
+- **Safe**: Under 75°C
+- **Caution**: 75-80°C (monitor closely)
+- **Danger**: Over 80°C (reduce workload, improve cooling)
+
+#### Cooling Solutions:
+- Additional case fans
+- Undervolting GPU slightly
+- Room air conditioning or fans
+- Processing during cooler parts of day
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### Configuration Errors
+```bash
+# Missing config sections
+❌ ConfigError: Missing required XTTS configuration: temperature
+✅ Solution: Check config.json file, ensure all engine sections present
+
+# Invalid parameter values
+❌ Temperature outside valid range
+✅ Solution: Check parameter ranges in engine documentation
+```
+
+#### TTS Engine Issues
+```bash
+# XTTS installation problems
+❌ ModuleNotFoundError: No module named 'TTS'
+✅ Solution: pip install TTS==0.22.0
+
+# OpenAI API issues
+❌ OpenAI API key not found
+✅ Solution: export OPENAI_API_KEY="your-key-here"
+
+# F5-TTS model loading
+❌ F5TTS.__init__() got unexpected keyword argument
+✅ Solution: Check F5-TTS version compatibility
+```
+
+#### Thermal Issues (Critical)
+```bash
+# GPU overheating during processing
+❌ Error code 3221225477 (ACCESS_VIOLATION)
+❌ Driver crashes during long runs
+❌ Performance degradation over time
+
+✅ Solutions:
+1. Monitor GPU temps with nvidia-smi
+2. Ensure adequate case cooling
+3. Process smaller batches (--sections 1 2 3)
+4. Add room cooling for nighttime processing
+5. Consider undervolting GPU
+6. Take cooling breaks between long sessions
+```
+
+#### Audio Quality Issues
+```bash
+# Robotic/artificial speech
+✅ Adjust XTTS temperature (try 0.5-0.7)
+✅ Modify RVC settings: protect_rate: 0.4, index_rate: 0.3
+
+# Long pauses between sentences
+✅ Adjust audio.silence_gap settings in config
+
+# Technical terms mispronounced
+✅ Add pronunciation fixes to text preprocessing
+
+# Inconsistent voice quality
+✅ Ensure RVC processing is enabled
+✅ Check voice sample quality
+✅ Verify model loading properly
+```
+
+#### Processing Errors
+```bash
+# Section processing failures
+❌ RVC processing failed for section X
+✅ Solution: Check URVC installation and model availability
+✅ Resume processing - pipeline will skip completed sections
+
+# Memory issues
+❌ CUDA out of memory
+✅ Solution: Reduce chunk_max_chars, enable model reloading
+
+# File access errors  
+❌ Permission denied on temp files
+✅ Solution: Run with appropriate permissions, check disk space
+```
+
+### Resume Capability
+
+The section-based pipeline automatically resumes from failures:
+
+```bash
+# If processing fails at section 15/50
+# Simply re-run the same command:
+python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name same-batch-name
+
+# Pipeline will:
+# ✅ Skip sections 1-14 (already complete)
+# ✅ Resume from section 15
+# ✅ Continue to completion
+```
+
+## Performance Benchmarks
+
+### Typical Processing Times (per section ~30 minutes audio):
+
+#### XTTS + URVC (Recommended):
+- **TTS Generation**: 15-25 minutes
+- **RVC Processing**: 5-10 minutes  
+- **Total per section**: 20-35 minutes
+
+#### OpenAI TTS (Cloud):
+- **TTS Generation**: 2-5 minutes
+- **No RVC needed**: 0 minutes
+- **Total per section**: 2-5 minutes
+
+#### Processing Full Audiobook (10 hours):
+- **XTTS + URVC**: 6-12 hours total processing time
+- **OpenAI TTS**: 1-2 hours total processing time
+- **Note**: Times vary based on text complexity and hardware
+
+### Hardware Impact:
+- **RTX 3080 (10GB)**: Baseline performance
+- **RTX 4080+ (16GB+)**: 20-30% faster
+- **Lower VRAM (6-8GB)**: May require smaller chunks, longer processing
+
+## Development Workflow
+
+### Adding New Parameters (No Code Required)
+
+1. **Add to config file**:
+```json
+{
+  "engine_name": {
+    "existing_param": "value",
+    "new_parameter": "new_value"
+  }
+}
+```
+
+2. **Parameter automatically detected and used** - no code changes needed!
+
+### Engine Modifications (Rare)
+
+All engines follow the same pattern:
+```python
+def process_engine_text_file(text_file: str, output_dir: str, config: Dict[str, Any], paths: Dict[str, Any]) -> List[str]:
+    # Extract dynamic config
+    engine_config = extract_engine_config(config, 'engine_name', verbose=True)
+    
+    # Validate required parameters
+    required_params = ['param1', 'param2']
+    missing_params = validate_required_params(engine_config, required_params, 'engine_name')
+    if missing_params:
+        return []
+    
+    # All config parameters automatically available in engine_config
+    # Process text and return generated files
+```
+
+### Testing Workflow
+
+1. **Create test project**:
+   ```bash
+   python AudiobookGenerator.py --init test-project
+   ```
+
+2. **Add short test content** (1-2 pages)
+
+3. **Test different engines**:
+   ```bash
+   python AudiobookGenerator.py --project test-project --tts-engine xtts --batch-name xtts-test
+   python AudiobookGenerator.py --project test-project --tts-engine edge --batch-name edge-test
+   ```
+
+4. **Compare quality and adjust settings** in config files
+
+5. **Scale to full content** once settings optimized
 
 ## Quick Reference
 
 ### Essential Commands
 ```bash
 # Setup
-python config_manager.py --create-default
 python AudiobookGenerator.py --init mybook
+python AudiobookGenerator.py --project mybook --input book.epub
 
-# Basic processing (recommended)
-python AudiobookGenerator.py --project mybook --input book.epub  
+# Best quality processing
 python AudiobookGenerator.py --project mybook --tts-engine xtts --rvc-voice sigma_male_narrator
 
-# Voice management
-python AudiobookGenerator.py --project mybook --list-rvc-voices
-python AudiobookGenerator.py --project mybook --rvc-voice custom_voice --speed 1.1
+# Free processing 
+python AudiobookGenerator.py --project mybook --tts-engine edge --skip-rvc
 
-# Quality testing
-python AudiobookGenerator.py --project mybook --batch-name "test-run"
-# Compare job snapshots in output/mybook/jobs/*/config.json
+# Resume failed processing
+python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name same-name
+
+# Monitor thermal during processing
+nvidia-smi
 ```
 
 ### File Locations
-- **Master Config**: `default_config.json` (project root)
-- **Config Manager**: `config_manager.py` (project root)
-- **Project Config**: `output/project_name/config/config.json`
-- **Job Snapshots**: `output/project_name/jobs/batch_name/config.json`
-- **Final Audio**: `output/project_name/jobs/batch_name/batch_name_rvc.wav`
+- **Final Audio**: `output/project/jobs/batch/project_batch_master.wav`
+- **Section Files**: `output/project/jobs/batch/sections/`
+- **Config Snapshot**: `output/project/jobs/batch/config.json`
+- **Progress Log**: `output/project/jobs/batch/progress.log`
 
-### Configuration Philosophy
-- 📄 **JSON is truth** - All parameters externally controlled
-- 🚫 **No defaults in code** - Everything comes from config files
-- 🔍 **Dynamic detection** - Add any parameter, engine uses it automatically  
-- 📸 **Complete snapshots** - Every job's exact settings preserved
-- 🔄 **No caching issues** - Settings load fresh each time
-- 🎭 **Voice flexibility** - Unlimited RVC voices with plug-and-play setup
+### Thermal Management Commands
+```bash
+# Monitor GPU temperature
+nvidia-smi
 
-### Recommended Workflow
+# Check GPU usage and temperature continuously
+watch -n 2 nvidia-smi
+
+# Process in small batches if overheating
+python AudiobookGenerator.py --project mybook --sections 1 2 3
+# Wait for cooling, then:
+python AudiobookGenerator.py --project mybook --sections 4 5 6
+```
+
+### Quality Optimization Workflow
 1. **Start with XTTS + Sigma Male Narrator** for best quality
-2. **Test with short text** to dial in settings
-3. **Use config snapshots** to compare results
-4. **Scale to full audiobooks** once settings are optimized
-5. **Train custom RVC models** for personalized voices
+2. **Test with 1-2 sections** to optimize settings  
+3. **Monitor temperatures** during initial runs
+4. **Use section-based processing** for thermal management
+5. **Scale to full audiobooks** once settings confirmed
+6. **Train custom RVC models** for personalized voices
 
-This architecture enables rapid experimentation, precise reproducibility, and effortless optimization of audiobook generation quality with professional-grade voice conversion.
+This architecture enables high-quality audiobook generation with professional voice conversion while maintaining system stability through intelligent thermal and memory management.
