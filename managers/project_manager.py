@@ -337,7 +337,7 @@ class ProjectManager:
             'batch_dir': batch_dir,
             'temp_dir': batch_dir / "temp_files",
             'sections_dir': batch_dir / "sections",
-            'final': batch_dir / f"{project_name}_{batch_name}_master.wav",
+            'final': batch_dir / f"{project_name}_{batch_name}_master.mp3",
             'log': batch_dir / "progress.log",
             'config': project_dir / "config" / "config.json",
             'job_config': batch_dir / "config.json"

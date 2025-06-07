@@ -208,7 +208,7 @@ output/
 #### Config File Hierarchy
 1. **Default Config**: `default_config.json` - Master template
 2. **Project Config**: `output/project/config/config.json` - Project-specific settings  
-3. **Job Config**: `output/project/jobs/batch/config.json` - Complete snapshot of job settings
+3. **Job Config**: `output/project/jobs/[job]/config.json` - Complete snapshot of job settings
 
 #### Dynamic Parameter Loading
 ```python
@@ -357,14 +357,14 @@ python AudiobookGenerator.py --project mybook --tts-engine openai --engine-voice
 # Process specific sections
 python AudiobookGenerator.py --project mybook --tts-engine xtts --sections 1 2 3
 
-# Custom batch naming
-python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name "high-quality-test"
+# Custom job naming
+python AudiobookGenerator.py --project mybook --tts-engine xtts --job "high-quality-test"
 
 # Skip RVC processing
 python AudiobookGenerator.py --project mybook --tts-engine xtts --skip-rvc
 
 # Resume failed job (automatic - just re-run same command)
-python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name "failed-job"
+python AudiobookGenerator.py --project mybook --tts-engine xtts --job "failed-job"
 ```
 
 ### Voice Management
@@ -546,7 +546,7 @@ All engines support dynamic parameter loading - any parameter in the config file
 1. **Monitor temperatures**: Use `nvidia-smi` to watch GPU temps
 2. **Process in sections**: Let system cool between sections
 3. **Nighttime considerations**: Ensure adequate cooling without AC
-4. **Batch processing**: Process 3-5 sections, pause, repeat
+4. **Job processing**: Process 3-5 sections, pause, repeat
 
 #### Temperature Thresholds:
 - **Safe**: Under 75°C
@@ -646,7 +646,7 @@ The section-based pipeline automatically resumes from failures:
 ```bash
 # If processing fails at section 15/50
 # Simply re-run the same command:
-python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name same-batch-name
+python AudiobookGenerator.py --project mybook --tts-engine xtts --job same-job
 
 # Pipeline will:
 # ✅ Skip sections 1-14 (already complete)
@@ -723,8 +723,8 @@ def process_engine_text_file(text_file: str, output_dir: str, config: Dict[str, 
 
 3. **Test different engines**:
    ```bash
-   python AudiobookGenerator.py --project test-project --tts-engine xtts --batch-name xtts-test
-   python AudiobookGenerator.py --project test-project --tts-engine edge --batch-name edge-test
+   python AudiobookGenerator.py --project test-project --tts-engine xtts --job xtts-test
+   python AudiobookGenerator.py --project test-project --tts-engine edge --job edge-test
    ```
 
 4. **Compare quality and adjust settings** in config files
@@ -746,17 +746,17 @@ python AudiobookGenerator.py --project mybook --tts-engine xtts --rvc-voice sigm
 python AudiobookGenerator.py --project mybook --tts-engine edge --skip-rvc
 
 # Resume failed processing
-python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name same-name
+python AudiobookGenerator.py --project mybook --tts-engine xtts --job same-name
 
 # Monitor thermal during processing
 nvidia-smi
 ```
 
 ### File Locations
-- **Final Audio**: `output/project/jobs/batch/project_batch_master.wav`
-- **Section Files**: `output/project/jobs/batch/sections/`
-- **Config Snapshot**: `output/project/jobs/batch/config.json`
-- **Progress Log**: `output/project/jobs/batch/progress.log`
+- **Final Audio**: `output/project/jobs/[job]/project_batch_master.wav`
+- **Section Files**: `output/project/jobs/[job]/sections/`
+- **Config Snapshot**: `output/project/jobs/[job]/config.json`
+- **Progress Log**: `output/project/jobs/[job]/progress.log`
 
 ### Thermal Management Commands
 ```bash

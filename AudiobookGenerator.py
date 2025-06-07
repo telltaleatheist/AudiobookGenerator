@@ -85,7 +85,7 @@ Examples:
     parser.add_argument("--edge-volume", help="EdgeTTS volume")
     parser.add_argument("--edge-delay", type=float, help="EdgeTTS delay between chunks")
     parser.add_argument("--silence-gap", type=float, help="Silence gap between chunks")
-    parser.add_argument("--batch-name", type=str, help="Custom name for this batch (e.g., 'bark-test', 'chapter-5')")
+    parser.add_argument("--job", type=str, help="Custom name for this job (e.g., 'bark-test', 'chapter-5')")
 
     return parser
 
@@ -435,9 +435,8 @@ def main():
                 return 1
         
         # Generate batch name and paths
-        if args.batch_name:
-            # Use custom batch name, sanitize it
-            batch_name = re.sub(r'[^\w\-_]', '_', args.batch_name)
+        if args.job:
+            batch_name = re.sub(r'[^\w\-_]', '_', args.job)
             # Handle collisions by adding counter if needed
             project_dir = project_manager.validate_project(args.project)
             counter = 2

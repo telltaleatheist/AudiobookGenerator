@@ -12,7 +12,7 @@ A professional-grade audiobook generation system that converts text documents (E
 - **Voice Cloning**: Create audiobooks with custom voices using reference audio samples
 - **Multi-Format Support**: EPUB, PDF, and TXT files with intelligent text extraction
 - **Smart Text Processing**: Prevents splitting technical terms and preserves phrase integrity
-- **Project Management**: Organized workflow with batch processing and complete configuration snapshots
+- **Project Management**: Organized workflow with job processing and complete configuration snapshots
 - **Thermal Management**: Built-in cooling strategies for extended processing sessions
 
 ---
@@ -180,7 +180,7 @@ output/
 python AudiobookGenerator.py --project mybook --sections 1 2 3
 
 # Automatic resume from failures (just re-run same command)
-python AudiobookGenerator.py --project mybook --tts-engine xtts --batch-name same-name
+python AudiobookGenerator.py --project mybook --tts-engine xtts --job same-name
 # ✅ Skips completed sections, resumes from failure point
 ```
 
