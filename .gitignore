@@ -183,3 +183,5 @@ engines/__pycache__/bark_engine.cpython-310.pyc
 engines/__pycache__/edge_engine.cpython-310.pyc
 engines/__pycache__/f5_engine.cpython-310.pyc
 engines/__pycache__/openai_engine.cpython-310.pyc
+core/__pycache__/progress_display_manager.cpython-310.pyc
+core/__pycache__/progress_display_manager.cpython-310.pyc

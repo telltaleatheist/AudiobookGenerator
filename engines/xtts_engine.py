@@ -115,6 +115,170 @@ def process_xtts_text_file(text_file: str, output_dir: str, config: Dict[str, An
         log_error(f"XTTS processing failed: {e}")
         return []
 
+def score_split_point(first_part: str, second_part: str) -> float:
+    """Score a potential split point based on linguistic quality"""
+    score = 0.0
+    
+    first_words = first_part.strip().split()
+    second_words = second_part.strip().split()
+    
+    if not first_words or not second_words:
+        return -1.0
+    
+    last_word = first_words[-1].lower().rstrip('.,!?";:')
+    first_word = second_words[0].lower().lstrip('"')
+    
+    # Positive scoring factors
+    if first_part.strip().endswith('.'):
+        score += 2.0  # Sentence boundary
+    
+    if first_part.strip().endswith('"'):
+        score += 1.5  # Dialogue boundary
+    
+    if first_part.strip().endswith(('!', '?')):
+        score += 1.0  # Strong punctuation
+    
+    # Negative scoring factors
+    if last_word in ['a', 'an', 'the']:
+        score -= 3.0  # Articles
+    
+    if last_word in ['of', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'to']:
+        score -= 2.0  # Prepositions
+    
+    if first_word in ['and', 'but', 'or', 'that', 'which']:
+        score -= 1.5  # Conjunctions
+    
+    # Length factors
+    if len(first_part) < 30:
+        score -= 1.0  # Too short
+    
+    return score
+
+def handle_oversized_chunk_enhanced(chunk: str, max_chars: int, existing_chunks: list) -> str:
+    """Enhanced handling of chunks that are still too long"""
+    
+    if len(chunk) <= max_chars:
+        return chunk
+    
+    # Try splitting on various punctuation marks, prioritized by quality
+    split_patterns = [
+        r'[,;]\s+',  # Commas and semicolons
+        r'(?:\s+(?:and|but|or|however|meanwhile|then|while|when|as|because)\s+)',  # Conjunctions
+        r'(?:\s+(?:after|before|during|since|until|while)\s+)',  # Time conjunctions
+        r'\s+--\s+',  # Em dashes
+        r'\s+\(\s*',  # Parentheses
+    ]
+    
+    for pattern in split_patterns:
+        parts = re.split(pattern, chunk)
+        if len(parts) > 1:
+            result_chunks = []
+            temp_chunk = ""
+            
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+                
+                test_chunk = temp_chunk + (" " if temp_chunk else "") + part
+                if len(test_chunk) <= max_chars:
+                    temp_chunk = test_chunk
+                else:
+                    if temp_chunk:
+                        result_chunks.append(temp_chunk)
+                    temp_chunk = part
+            
+            if temp_chunk:
+                result_chunks.append(temp_chunk)
+            
+            # Add all but the last chunk to existing_chunks
+            for chunk_part in result_chunks[:-1]:
+                existing_chunks.append(chunk_part)
+            
+            # Return the last chunk for continued processing
+            return result_chunks[-1] if result_chunks else ""
+    
+    # If no good split points found, fall back to word splitting
+    words = chunk.split()
+    temp_chunk = ""
+    for word in words:
+        test_word = temp_chunk + (" " if temp_chunk else "") + word
+        if len(test_word) <= max_chars:
+            temp_chunk = test_word
+        else:
+            if temp_chunk:
+                existing_chunks.append(temp_chunk)
+            temp_chunk = word
+    
+    return temp_chunk
+
+def validate_chunk_quality(chunks: list, max_chars: int) -> list:
+    """Final quality validation and cleanup"""
+    
+    validated_chunks = []
+    
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        
+        # Ensure chunk length compliance
+        if len(chunk) <= max_chars:
+            validated_chunks.append(chunk)
+        else:
+            # Emergency word-based splitting for non-compliant chunks
+            words = chunk.split()
+            temp_chunk = ""
+            for word in words:
+                test = temp_chunk + (" " if temp_chunk else "") + word
+                if len(test) <= max_chars:
+                    temp_chunk = test
+                else:
+                    if temp_chunk:
+                        validated_chunks.append(temp_chunk)
+                    temp_chunk = word
+            if temp_chunk:
+                validated_chunks.append(temp_chunk)
+    
+    return validated_chunks
+
+def post_process_chunks_enhanced(chunks: list, max_chars: int) -> list:
+    """Enhanced post-processing with smarter merging decisions"""
+    
+    if not chunks:
+        return chunks
+    
+    final_chunks = []
+    i = 0
+    
+    while i < len(chunks):
+        chunk = chunks[i]
+        
+        # Try to merge very short chunks with next chunk
+        if len(chunk) < 40 and i < len(chunks) - 1:
+            next_chunk = chunks[i + 1]
+            merged = chunk + " " + next_chunk
+            
+            if len(merged) <= max_chars and is_safe_merge(chunk, next_chunk):
+                final_chunks.append(merged)
+                i += 2
+                continue
+        
+        # Try to merge with previous chunk if current is very short
+        elif len(chunk) < 25 and final_chunks:
+            prev_chunk = final_chunks[-1]
+            merged = prev_chunk + " " + chunk
+            
+            if len(merged) <= max_chars and is_safe_merge(prev_chunk, chunk):
+                final_chunks[-1] = merged
+                i += 1
+                continue
+        
+        final_chunks.append(chunk)
+        i += 1
+    
+    return final_chunks
+
 def process_xtts_chunks_with_retry(tts, chunks, output_dir, xtts_config):
     """Process chunks with horizontal progress bar"""
     import torch # type: ignore
@@ -529,7 +693,7 @@ def determine_gap_type(current_chunk, next_chunk=None, xtts_config=None):
     return 0.3
 
 def smart_dialogue_chunking(text, max_chars=250):
-    """IMPROVED: Smart chunking within XTTS limit with universal phrase preservation"""
+    """ENHANCED: Advanced chunking with better phrase preservation and dialogue handling"""
     
     # Normalize text first
     text = re.sub(r'\s+', ' ', text.strip())
@@ -537,8 +701,8 @@ def smart_dialogue_chunking(text, max_chars=250):
     chunks = []
     current_chunk = ""
     
-    # Split into sentences, preserving dialogue structure
-    sentence_pattern = r'(?<=[.!?])\s+(?=[A-Z"])|(?<=\.\")\s+(?=[A-Z])|(?<=\")\s+(?=[A-Z][a-z])'
+    # Enhanced sentence splitting that preserves dialogue structure better
+    sentence_pattern = r'(?<=[.!?])\s+(?=[A-Z"])|(?<=\.\")\s+(?=[A-Z])|(?<=\")\s+(?=[A-Z][a-z])|(?<=\!\")\s+|(?<=\?\")\s+'
     sentences = re.split(sentence_pattern, text)
     
     for sentence in sentences:
@@ -552,120 +716,64 @@ def smart_dialogue_chunking(text, max_chars=250):
         if len(test_chunk) <= max_chars:
             current_chunk = test_chunk
         else:
-            # Check if this break point is safe before splitting
+            # ENHANCED: Better break point analysis
             if current_chunk and is_safe_break_point(current_chunk, sentence):
                 chunks.append(current_chunk)
                 current_chunk = sentence
             else:
-                # Try to find a better break point or handle unsafe split
+                # Try to find a better break point within current chunk
                 if current_chunk:
                     better_split = find_better_split_point(current_chunk, sentence, max_chars)
                     if better_split:
                         chunks.append(better_split['first_part'])
                         current_chunk = better_split['second_part']
                     else:
-                        chunks.append(current_chunk)
-                        current_chunk = sentence
+                        # If no better split found, use original logic but with warnings
+                        if len(current_chunk) > max_chars * 0.8:  # Only split if we're near the limit
+                            chunks.append(current_chunk)
+                            current_chunk = sentence
+                        else:
+                            # Try to keep them together if we're not too close to limit
+                            current_chunk = test_chunk
                 else:
                     current_chunk = sentence
             
-            # If sentence is still too long, split more aggressively
+            # Enhanced aggressive splitting for overly long chunks
             if len(current_chunk) > max_chars:
-                parts = re.split(r'[,;]\s+|(?:\s+(?:and|but|or|however|meanwhile|then|while|when|as|because)\s+)', current_chunk)
-                
-                if len(parts) > 1:
-                    temp_chunk = ""
-                    for part in parts:
-                        part = part.strip()
-                        if not part:
-                            continue
-                        test_part = temp_chunk + (" " if temp_chunk else "") + part
-                        if len(test_part) <= max_chars:
-                            temp_chunk = test_part
-                        else:
-                            if temp_chunk:
-                                chunks.append(temp_chunk)
-                            temp_chunk = part
-                            
-                            if len(part) > max_chars:
-                                words = part.split()
-                                temp_chunk = ""
-                                for word in words:
-                                    test_word = temp_chunk + (" " if temp_chunk else "") + word
-                                    if len(test_word) <= max_chars:
-                                        temp_chunk = test_word
-                                    else:
-                                        if temp_chunk:
-                                            chunks.append(temp_chunk)
-                                        temp_chunk = word
-                    current_chunk = temp_chunk
-                else:
-                    # No punctuation to split on, split by words
-                    words = current_chunk.split()
-                    current_chunk = ""
-                    for word in words:
-                        test_word = current_chunk + (" " if current_chunk else "") + word
-                        if len(test_word) <= max_chars:
-                            current_chunk = test_word
-                        else:
-                            if current_chunk:
-                                chunks.append(current_chunk)
-                            current_chunk = word
+                current_chunk = handle_oversized_chunk_enhanced(current_chunk, max_chars, chunks)
     
     if current_chunk:
         chunks.append(current_chunk)
     
-    # Post-process: merge very short chunks with intelligent boundary checking
-    final_chunks = []
-    i = 0
-    while i < len(chunks):
-        chunk = chunks[i]
-        
-        if len(chunk) < 40 and i < len(chunks) - 1:
-            next_chunk = chunks[i + 1]
-            merged = chunk + " " + next_chunk
-            if len(merged) <= max_chars and is_safe_merge(chunk, next_chunk):
-                final_chunks.append(merged)
-                i += 2
-                continue
-        
-        final_chunks.append(chunk)
-        i += 1
+    # ENHANCED: Post-process with smarter merging and quality validation
+    final_chunks = post_process_chunks_enhanced(chunks, max_chars)
     
-    # Safety check: ensure no chunk exceeds max_chars
-    verified_chunks = []
-    for chunk in final_chunks:
-        if len(chunk) <= max_chars:
-            verified_chunks.append(chunk)
-        else:
-            words = chunk.split()
-            temp_chunk = ""
-            for word in words:
-                test = temp_chunk + (" " if temp_chunk else "") + word
-                if len(test) <= max_chars:
-                    temp_chunk = test
-                else:
-                    if temp_chunk:
-                        verified_chunks.append(temp_chunk)
-                    temp_chunk = word
-            if temp_chunk:
-                verified_chunks.append(temp_chunk)
+    # Final quality validation
+    validated_chunks = validate_chunk_quality(final_chunks, max_chars)
     
-    return verified_chunks
+    return validated_chunks
 
 def is_safe_merge(chunk1, chunk2):
     """Check if merging two chunks would create good flow - UNIVERSAL"""
     
-    # Don't merge if it would create awkward transitions
-    if chunk1.strip().endswith('"') and not chunk2.strip().startswith('"'):
-        # Dialogue to narration - usually safe to merge
-        return True
+    chunk1_stripped = chunk1.strip()
+    chunk2_stripped = chunk2.strip()
     
-    if not chunk1.strip().endswith('"') and chunk2.strip().startswith('"'):
-        # Narration to dialogue - usually safe to merge
-        return True
+    # Dialogue transition rules
+    if chunk1_stripped.endswith('"') and not chunk2_stripped.startswith('"'):
+        return True  # Dialogue to narration
     
-    # Generally safe to merge short chunks
+    if not chunk1_stripped.endswith('"') and chunk2_stripped.startswith('"'):
+        return True  # Narration to dialogue
+    
+    # Don't merge if both are dialogue from potentially different speakers
+    if chunk1_stripped.endswith('"') and chunk2_stripped.startswith('"'):
+        return False
+    
+    # Check for topic shifts
+    if any(word in chunk2_stripped.lower()[:50] for word in ['meanwhile', 'later', 'suddenly', 'however', 'nevertheless', 'on the other hand']):
+        return False  # Likely topic shift
+    
     return True
 
 def auto_detect_reference_audio(paths: Dict[str, Any]) -> str:
@@ -701,7 +809,8 @@ def auto_detect_reference_audio(paths: Dict[str, Any]) -> str:
         return None
 
 def is_safe_break_point(current_chunk: str, next_sentence: str) -> bool:
-    """Check if breaking between chunks would split common phrases"""
+    """Enhanced break point analysis with better linguistic awareness"""
+    
     if not current_chunk or not next_sentence:
         return True
     
@@ -711,22 +820,106 @@ def is_safe_break_point(current_chunk: str, next_sentence: str) -> bool:
     if not current_words or not next_words:
         return True
     
-    last_word = current_words[-1].lower().rstrip('.,!?";')
+    last_word = current_words[-1].lower().rstrip('.,!?";:')
     first_word = next_words[0].lower().lstrip('"')
     
-    # Don't break if current chunk ends with articles, prepositions
-    if last_word in ['a', 'an', 'the', 'of', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'to']:
+    # Enhanced linguistic rules
+    
+    # 1. Don't break articles and determiners
+    if last_word in ['a', 'an', 'the', 'this', 'that', 'these', 'those', 'some', 'any', 'every', 'each']:
         return False
     
-    # Don't break if next sentence starts with conjunctions
-    if first_word in ['and', 'but', 'or', 'that', 'which', 'who', 'where', 'when', 'while']:
+    # 2. Don't break prepositions (expanded list)
+    prepositions = ['of', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'into', 'onto', 
+                   'upon', 'under', 'over', 'through', 'between', 'among', 'during', 'before', 
+                   'after', 'above', 'below', 'across', 'around', 'behind', 'beside']
+    if last_word in prepositions:
         return False
     
-    # Prefer breaking after complete dialogue
-    if current_chunk.strip().endswith('"') or current_chunk.strip().endswith('."'):
+    # 3. Don't break conjunctions that continue thoughts
+    if first_word in ['and', 'but', 'or', 'that', 'which', 'who', 'where', 'when', 'while', 
+                     'although', 'because', 'since', 'unless', 'until', 'whereas']:
+        return False
+    
+    # 4. Enhanced adjective-noun detection
+    if is_adjective(last_word) and is_noun_like(first_word):
+        return False
+    
+    # 5. Don't break compound phrases (enhanced detection)
+    if len(current_words) >= 2:
+        last_two = ' '.join(current_words[-2:]).lower()
+        compound_phrases = [
+            'as well', 'such as', 'in order', 'due to', 'rather than', 'more than', 
+            'less than', 'other than', 'as soon', 'so that', 'even though', 'as if',
+            'in case', 'on behalf', 'according to', 'in spite', 'regardless of'
+        ]
+        for phrase in compound_phrases:
+            if last_two.endswith(phrase.split()[-1]) and any(last_two.startswith(phrase.split()[0]) for phrase in compound_phrases):
+                return False
+    
+    # 6. Prefer breaking after complete dialogue
+    current_stripped = current_chunk.strip()
+    if current_stripped.endswith('"') or current_stripped.endswith('."') or current_stripped.endswith('!"') or current_stripped.endswith('?"'):
         return True
     
+    # 7. Prefer breaking after complete sentences
+    if current_stripped.endswith('.') and not last_word.endswith('.'):
+        return True
+    
+    # 8. Don't break mid-dialogue
+    if '"' in current_chunk and not current_stripped.endswith('"'):
+        # We're in the middle of dialogue
+        return False
+    
     return True
+
+def is_adjective(word: str) -> bool:
+    """Simple heuristic to detect adjectives - UNIVERSAL patterns"""
+    adjective_endings = [
+        'ic', 'al', 'tic', 'ed', 'ing', 'ous', 'ful', 'less', 'ive', 'ible', 'able',
+        'ary', 'ory', 'ent', 'ant', 'ish', 'like', 'ly', 'ese', 'ine', 'ile'
+    ]
+    
+    clean_word = word.lower().rstrip('.,!?";:')
+    
+    if len(clean_word) < 3:
+        return False
+    
+    for ending in adjective_endings:
+        if clean_word.endswith(ending) and len(clean_word) > len(ending) + 2:
+            return True
+    
+    # Common adjectives that don't follow patterns
+    common_adjectives = [
+        'good', 'bad', 'big', 'small', 'old', 'new', 'long', 'short', 'high', 'low',
+        'hot', 'cold', 'warm', 'cool', 'fast', 'slow', 'hard', 'soft', 'strong', 'weak'
+    ]
+    
+    return clean_word in common_adjectives
+
+def is_noun_like(word):
+    """Simple heuristic to detect nouns - UNIVERSAL patterns"""
+    clean_word = word.lower().lstrip('"').rstrip('.,!?";:')
+    
+    # Capitalized words (except sentence starters) are often nouns
+    if word[0].isupper() and len(clean_word) > 2:
+        return True
+    
+    # Common noun endings
+    noun_endings = [
+        'tion', 'sion', 'ment', 'ness', 'ity', 'ty', 'er', 'or', 'ist', 'ism',
+        'ure', 'age', 'ance', 'ence', 'ship', 'hood', 'dom', 'ward'
+    ]
+    
+    for ending in noun_endings:
+        if clean_word.endswith(ending) and len(clean_word) > len(ending) + 2:
+            return True
+    
+    # Length and pattern heuristics
+    if len(clean_word) >= 4 and not clean_word.endswith(('ly', 'ing', 'ed')):
+        return True
+    
+    return False
 
 def find_better_split_point(current_chunk, next_sentence, max_chars):
     """Try to find a better split point within current chunk - UNIVERSAL"""
@@ -735,19 +928,28 @@ def find_better_split_point(current_chunk, next_sentence, max_chars):
     if len(words) <= 2:
         return None
     
-    # Try splitting at different points within the current chunk
-    for i in range(len(words) - 1, 0, -1):
+    # Try splitting at different points, prioritizing good break locations
+    best_split = None
+    best_score = -1
+    
+    for i in range(len(words) - 1, max(1, len(words) - 10), -1):  # Don't go too far back
         first_part = ' '.join(words[:i])
         remaining = ' '.join(words[i:])
         
-        # Check if this creates a better split
-        if is_safe_break_point(first_part, remaining + ' ' + next_sentence):
-            return {
+        if len(first_part) < max_chars * 0.6:  # Don't make chunks too small
+            continue
+        
+        # Score this split point
+        score = score_split_point(first_part, remaining + ' ' + next_sentence)
+        
+        if score > best_score:
+            best_score = score
+            best_split = {
                 'first_part': first_part,
                 'second_part': remaining + ' ' + next_sentence
             }
     
-    return None
+    return best_split
 
 def register_xtts_engine():
     """Register XTTS engine"""
