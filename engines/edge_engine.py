@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Edge Engine - Free EdgeTTS processor (command-line version)
-UPDATED: Uses new section-based architecture with dynamic parameter loading and progress bar
+FIXED: Removed file parameter from log_status calls
 """
 
 import sys
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 # Import dynamic utilities from engine registry
-from core.progress_display_manager import log_status
+from core.progress_display_manager import log_status, print_above_progress
 from engines.base_engine import (
     extract_engine_config, 
     filter_params_for_function,
@@ -26,7 +26,7 @@ try:
     EDGE_AVAILABLE = True
 except ImportError:
     EDGE_AVAILABLE = False
-    print("ERROR: EdgeTTS not available. Install with: pip install edge-tts", file=sys.stderr)
+    print("ERROR: EdgeTTS not available. Install with: pip install edge-tts")
 
 def chunk_text_for_edge(text, max_chars=1000):
     """Split text into chunks optimized for EdgeTTS (free version can handle large chunks)"""
@@ -124,7 +124,7 @@ async def generate_edge_audio_dynamic(text, edge_config):
     try:
         # Validate text
         if not text or not text.strip():
-            print(f"ERROR: Empty text provided to EdgeTTS", file=sys.stderr)
+            print(f"ERROR: Empty text provided to EdgeTTS")
             return None
         
         # Apply text preprocessing
@@ -161,13 +161,13 @@ async def generate_edge_audio_dynamic(text, edge_config):
                 chunk_count += 1
         
         if len(audio_data) == 0:
-            print(f"ERROR: No audio data received from EdgeTTS", file=sys.stderr)
+            print(f"ERROR: No audio data received from EdgeTTS")
             return None
         
         return audio_data
         
     except Exception as e:
-        print(f"ERROR: EdgeTTS generation failed: {e}", file=sys.stderr)
+        print(f"ERROR: EdgeTTS generation failed: {e}")
         if edge_config.get('debug_output', False):
             import traceback
             traceback.print_exc(file=sys.stderr)
@@ -176,7 +176,7 @@ async def generate_edge_audio_dynamic(text, edge_config):
 def save_edge_audio_dynamic(audio_data, output_path, edge_config):
     """Save EdgeTTS audio data with optional post-processing"""
     if not audio_data:
-        print(f"ERROR: No audio data to save", file=sys.stderr)
+        print(f"ERROR: No audio data to save")
         return False
         
     try:
@@ -210,7 +210,7 @@ def save_edge_audio_dynamic(audio_data, output_path, edge_config):
         return True
         
     except Exception as e:
-        print(f"ERROR: Failed to save audio to {output_path}: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to save audio to {output_path}: {e}")
         return False
 
 def _update_edge_progress_bar(completed: int, total: int, chunk_times: list):
@@ -384,13 +384,13 @@ def test_edge_voice_dynamic(voice_name, edge_config):
             available_voices = [v["Name"] for v in voices]
             
             if edge_config.get('verbose', False):
-                log_status(f"Found {len(available_voices)} total voices", file=sys.stderr)
+                print_above_progress(f"Found {len(available_voices)} total voices")
             
             # Check if the requested voice exists
             voice_exists = voice_name in available_voices
             
             if edge_config.get('verbose', False):
-                log_status(f"Voice '{voice_name}' exists: {voice_exists}", file=sys.stderr)
+                print_above_progress(f"Voice '{voice_name}' exists: {voice_exists}")
             
             # Get language-specific voices for fallback
             lang_prefix = voice_name.split('-')[0:2]  # e.g., ['en', 'US']
@@ -401,12 +401,12 @@ def test_edge_voice_dynamic(voice_name, edge_config):
                 lang_voices = [v for v in available_voices if v.startswith('en-')]
             
             if edge_config.get('verbose', False):
-                log_status(f"Found {len(lang_voices)} voices for language pattern", file=sys.stderr)
+                print_above_progress(f"Found {len(lang_voices)} voices for language pattern")
             
             return voice_exists, lang_voices, available_voices
             
         except Exception as e:
-            print(f"ERROR: Could not list EdgeTTS voices: {e}", file=sys.stderr)
+            print(f"ERROR: Could not list EdgeTTS voices: {e}")
             if edge_config.get('debug_output', False):
                 import traceback
                 traceback.print_exc(file=sys.stderr)
@@ -429,17 +429,17 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
                           'ignore_errors', 'skip_failed_chunks', 'verbose', 'debug_output']
         missing_params = validate_required_params(edge_config, required_params, 'edge')
         if missing_params:
-            print(f"ERROR: Missing required EdgeTTS configuration: {', '.join(missing_params)}", file=sys.stderr)
+            print(f"ERROR: Missing required EdgeTTS configuration: {', '.join(missing_params)}")
             return []
         
-        log_status(f"Starting EdgeTTS processing (free version)", file=sys.stderr)
-        log_status(f"Voice: {edge_config['voice']}", file=sys.stderr)
+        print_above_progress(f"Starting EdgeTTS processing (free version)")
+        print_above_progress(f"Voice: {edge_config['voice']}")
         
         # Show free EdgeTTS parameters
         rate = edge_config.get('rate', '+0%')
         pitch = edge_config.get('pitch', '+0Hz')
         volume = edge_config.get('volume', '+0%')
-        log_status(f"Rate: {rate}, Pitch: {pitch}, Volume: {volume}", file=sys.stderr)
+        print_above_progress(f"Rate: {rate}, Pitch: {pitch}, Volume: {volume}")
         
         # Display configured features (only those supported by free version)
         free_features = []
@@ -453,28 +453,28 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
             free_features.append(f"retry x{edge_config['retry_attempts']}")
         
         if free_features:
-            log_status(f"Free EdgeTTS features: {', '.join(free_features)}", file=sys.stderr)
+            print_above_progress(f"Free EdgeTTS features: {', '.join(free_features)}")
         
         # Test voice availability with enhanced checking
         voice_name = edge_config['voice']
-        log_status(f"Validating voice availability", file=sys.stderr)
+        print_above_progress(f"Validating voice availability")
         voice_available, lang_voices, all_voices = test_edge_voice_dynamic(voice_name, edge_config)
         
         if not voice_available:
-            print(f"WARNING: Voice {voice_name} not found", file=sys.stderr)
+            print(f"WARNING: Voice {voice_name} not found")
             
             # Check for fallback voice
             fallback_voice = edge_config.get('fallback_voice')
             if fallback_voice and fallback_voice in all_voices:
-                log_status(f"Using fallback voice: {fallback_voice}", file=sys.stderr)
+                print_above_progress(f"Using fallback voice: {fallback_voice}")
                 edge_config['voice'] = fallback_voice
             elif lang_voices:
-                log_status(f"Available voices for language: {lang_voices[:3]}", file=sys.stderr)
-                log_status(f"Proceeding with {voice_name} anyway", file=sys.stderr)
+                print_above_progress(f"Available voices for language: {lang_voices[:3]}")
+                print_above_progress(f"Proceeding with {voice_name} anyway")
             else:
-                print(f"ERROR: Could not find suitable voice, but proceeding anyway", file=sys.stderr)
+                print(f"ERROR: Could not find suitable voice, but proceeding anyway")
         else:
-            log_status(f"Voice {voice_name} confirmed available", file=sys.stderr)
+            print_above_progress(f"Voice {voice_name} confirmed available")
         
         # Read clean text (already processed in preprocessing)
         try:
@@ -482,23 +482,23 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
                 text = f.read().strip()
             
             if edge_config.get('verbose', False):
-                log_status(f"Read {len(text)} characters from {text_file}", file=sys.stderr)
+                print_above_progress(f"Read {len(text)} characters from {text_file}")
             
             if not text:
-                print(f"ERROR: Text file is empty", file=sys.stderr)
+                print(f"ERROR: Text file is empty")
                 return []
                 
         except Exception as e:
-            print(f"ERROR: Could not read text file {text_file}: {e}", file=sys.stderr)
+            print(f"ERROR: Could not read text file {text_file}: {e}")
             return []
         
         # Chunk text for EdgeTTS
         chunk_max_chars = edge_config.get('chunk_max_chars', 1000)
         chunks = chunk_text_for_edge(text, chunk_max_chars)
-        log_status(f"Created {len(chunks)} chunks for EdgeTTS", file=sys.stderr)
+        print_above_progress(f"Created {len(chunks)} chunks for EdgeTTS")
         
         if not chunks:
-            print(f"ERROR: No chunks created from text", file=sys.stderr)
+            print(f"ERROR: No chunks created from text")
             return []
         
         # Ensure output directory exists
@@ -509,7 +509,7 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
         try:
             generated_files = asyncio.run(process_edge_chunks_async_dynamic(chunks, output_dir, edge_config))
         except Exception as e:
-            print(f"ERROR: Async processing failed: {e}", file=sys.stderr)
+            print(f"ERROR: Async processing failed: {e}")
             if edge_config.get('debug_output', False):
                 import traceback
                 traceback.print_exc(file=sys.stderr)
@@ -517,15 +517,15 @@ def process_edge_text_file(text_file: str, output_dir: str, config: Dict[str, An
         
         # Final statistics
         success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
-        log_status(f"EdgeTTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
+        print_above_progress(f"EdgeTTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)")
         
         if len(generated_files) == 0:
-            print(f"ERROR: No audio files were generated successfully", file=sys.stderr)
+            print(f"ERROR: No audio files were generated successfully")
         
         return generated_files
         
     except Exception as e:
-        print(f"ERROR: EdgeTTS processing failed: {e}", file=sys.stderr)
+        print(f"ERROR: EdgeTTS processing failed: {e}")
         return []
 
 def register_edge_engine():

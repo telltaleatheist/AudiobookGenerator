@@ -26,7 +26,7 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
-    print("ERROR: OpenAI library not available. Install with: pip install openai", file=sys.stderr)
+    print("ERROR: OpenAI library not available. Install with: pip install openai")
 
 def chunk_text_for_openai(text, max_chars=4000):
     """Split text into chunks optimized for OpenAI TTS"""
@@ -83,26 +83,26 @@ def validate_openai_config(openai_config):
     # Check API key
     api_key = openai_config.get('api_key') or os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("ERROR: OpenAI API key not found", file=sys.stderr)
-        print("💡 Set OPENAI_API_KEY environment variable or add 'api_key' to config", file=sys.stderr)
+        print("ERROR: OpenAI API key not found")
+        print("💡 Set OPENAI_API_KEY environment variable or add 'api_key' to config")
         return False
     
     # Validate model
     valid_models = ['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts']
     model = openai_config.get('model', 'tts-1')
     if model not in valid_models:
-        print(f"WARNING: Unknown model '{model}'. Valid models: {', '.join(valid_models)}", file=sys.stderr)
+        print(f"WARNING: Unknown model '{model}'. Valid models: {', '.join(valid_models)}")
     
     # Validate voice
     valid_voices = ['echo', 'fable', 'onyx', 'nova', 'shimmer', 'alloy']
     voice = openai_config.get('voice', 'onyx')
     if voice not in valid_voices:
-        print(f"WARNING: Unknown voice '{voice}'. Valid voices: {', '.join(valid_voices)}", file=sys.stderr)
+        print(f"WARNING: Unknown voice '{voice}'. Valid voices: {', '.join(valid_voices)}")
     
     # Validate speed
     speed = openai_config.get('speed', 1.0)
     if speed is not None and not (0.25 <= speed <= 4.0):
-        print(f"WARNING: Speed {speed} outside valid range (0.25-4.0)", file=sys.stderr)
+        print(f"WARNING: Speed {speed} outside valid range (0.25-4.0)")
     
     return True
 
@@ -155,15 +155,15 @@ def generate_openai_audio_dynamic(client, text, openai_config):
         return audio_content
         
     except Exception as e:
-        print(f"ERROR: OpenAI TTS generation failed: {e}", file=sys.stderr)
+        print(f"ERROR: OpenAI TTS generation failed: {e}")
         
         # Provide helpful error messages
         if "authentication" in str(e).lower():
-            print("💡 Check your OpenAI API key", file=sys.stderr)
+            print("💡 Check your OpenAI API key")
         elif "quota" in str(e).lower():
-            print("💡 Check your OpenAI account billing/quota", file=sys.stderr)
+            print("💡 Check your OpenAI account billing/quota")
         elif "rate" in str(e).lower():
-            print("💡 Rate limited - wait a moment before retrying", file=sys.stderr)
+            print("💡 Rate limited - wait a moment before retrying")
         
         return None
 
@@ -208,7 +208,7 @@ def save_openai_audio(audio_content, output_path, response_format='mp3'):
         return True
         
     except Exception as e:
-        print(f"ERROR: Failed to save OpenAI audio: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to save OpenAI audio: {e}")
         return False
 
 def estimate_openai_cost(text, model='tts-1'):
@@ -410,17 +410,17 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
         required_params = ['voice', 'model', 'retry_attempts', 'retry_delay', 'ignore_errors', 'skip_failed_chunks']
         missing_params = validate_required_params(openai_config, required_params, 'openai')
         if missing_params:
-            print(f"ERROR: Missing required OpenAI configuration: {', '.join(missing_params)}", file=sys.stderr)
+            print(f"ERROR: Missing required OpenAI configuration: {', '.join(missing_params)}")
             return []
         
-        log_status(f"Starting OpenAI TTS processing", file=sys.stderr)
-        log_status(f"Model: {openai_config['model']}", file=sys.stderr)
-        log_status(f"Voice: {openai_config['voice']}", file=sys.stderr)
+        log_status(f"Starting OpenAI TTS processing")
+        log_status(f"Model: {openai_config['model']}")
+        log_status(f"Voice: {openai_config['voice']}")
         
         # Display configured parameters
         active_params = {k: v for k, v in openai_config.items() if v is not None and k != 'api_key'}
         if openai_config.get('verbose', False):
-            log_status(f"Active parameters: {active_params}", file=sys.stderr)
+            log_status(f"Active parameters: {active_params}")
         
         # Validate configuration
         if not validate_openai_config(openai_config):
@@ -429,9 +429,9 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
         # Setup OpenAI client
         try:
             client = setup_openai_client(openai_config)
-            log_status(f"OpenAI client initialized successfully", file=sys.stderr)
+            log_status(f"OpenAI client initialized successfully")
         except Exception as e:
-            print(f"ERROR: Failed to initialize OpenAI client: {e}", file=sys.stderr)
+            print(f"ERROR: Failed to initialize OpenAI client: {e}")
             return []
         
         # Read clean text (already preprocessed by pipeline)
@@ -439,13 +439,13 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
             text = f.read().strip()
         
         if not text:
-            print(f"ERROR: No text content to process", file=sys.stderr)
+            print(f"ERROR: No text content to process")
             return []
         
         # Chunk text for OpenAI TTS
         chunk_max_chars = openai_config.get('chunk_max_chars', 4000)
         chunks = chunk_text_for_openai(text, chunk_max_chars)
-        log_status(f"Created {len(chunks)} chunks for OpenAI TTS", file=sys.stderr)
+        log_status(f"Created {len(chunks)} chunks for OpenAI TTS")
         
         # Ensure output directory exists
         output_dir = Path(output_dir)
@@ -456,15 +456,15 @@ def process_openai_text_file(text_file: str, output_dir: str, config: Dict[str, 
         
         # Final statistics
         success_rate = len(generated_files) / len(chunks) * 100 if chunks else 0
-        log_status(f"OpenAI TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)", file=sys.stderr)
+        log_status(f"OpenAI TTS processing completed: {len(generated_files)}/{len(chunks)} files generated ({success_rate:.1f}% success)")
         
         if len(generated_files) == 0:
-            print(f"ERROR: No audio files were generated successfully", file=sys.stderr)
+            print(f"ERROR: No audio files were generated successfully")
         
         return generated_files
         
     except Exception as e:
-        print(f"ERROR: OpenAI TTS processing failed: {e}", file=sys.stderr)
+        print(f"ERROR: OpenAI TTS processing failed: {e}")
         return []
 
 def register_openai_engine():

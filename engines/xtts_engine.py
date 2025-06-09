@@ -43,7 +43,7 @@ try:
     XTTS_AVAILABLE = True
 except ImportError:
     XTTS_AVAILABLE = False
-    print("ERROR: XTTS not available. Install with: pip install TTS", file=sys.stderr)
+    print("ERROR: XTTS not available. Install with: pip install TTS")
 
 def process_xtts_text_file(text_file: str, output_dir: str, config: Dict[str, Any], paths: Dict[str, Any]) -> List[str]:
     """Main XTTS engine processor - simplified output"""
@@ -481,7 +481,7 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
         # Handle speaker configuration
         speaker_wav = xtts_config.get('speaker_wav')
         if not speaker_wav:
-            print("ERROR: speaker_wav required for low-level interface", file=sys.stderr)
+            print("ERROR: speaker_wav required for low-level interface")
             return None, None
         
         if isinstance(speaker_wav, list):
@@ -560,7 +560,7 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
                         wav = value
                         break
                 else:
-                    print("ERROR: Could not find audio data in model output", file=sys.stderr)
+                    print("ERROR: Could not find audio data in model output")
                     return None, None
         else:
             # Model returned raw audio data
@@ -572,7 +572,7 @@ def generate_xtts_audio_lowlevel(tts, text, xtts_config):
         return wav, sample_rate
         
     except Exception as e:
-        print(f"ERROR: Low-level XTTS generation failed: {e}", file=sys.stderr)
+        print(f"ERROR: Low-level XTTS generation failed: {e}")
         
         # Fallback to high-level API
         return generate_xtts_audio_highlevel(tts, text, xtts_config)
@@ -615,7 +615,7 @@ def generate_xtts_audio_highlevel(tts, text, xtts_config):
         return wav, tts.synthesizer.output_sample_rate
         
     except Exception as e:
-        print(f"ERROR: High-level XTTS generation failed: {e}", file=sys.stderr)
+        print(f"ERROR: High-level XTTS generation failed: {e}")
         return None, None
 
 def load_xtts_model(xtts_config: Dict[str, Any]):
@@ -805,7 +805,7 @@ def auto_detect_reference_audio(paths: Dict[str, Any]) -> str:
             return [str(f) for f in audio_files]
         
     except Exception as e:
-        print(f"WARNING: Could not auto-detect reference audio: {e}", file=sys.stderr)
+        print(f"WARNING: Could not auto-detect reference audio: {e}")
         return None
 
 def is_safe_break_point(current_chunk: str, next_sentence: str) -> bool:

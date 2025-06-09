@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Pipeline Manager - Simplified without progress bars
+Pipeline Manager - Enhanced with better debugging and phase validation
+FIXED: Added proper phase validation and forced preprocessing when sections are missing
 """
 
 import json
@@ -36,21 +37,49 @@ class PipelineManager:
             if 'status' not in self.progress:
                 self._initialize_progress(source_file, paths, config, sections, skip_rvc)
             
+            # FIXED: Ensure sections key exists before proceeding
+            if 'sections' not in self.progress:
+                self.progress['sections'] = {
+                    'total': 0,
+                    'completed': [],
+                    'current': None,
+                    'remaining': [],
+                    'files': {}
+                }
+                self._save_progress()
+            
             # Log pipeline start
             self._log_checkpoint("PIPELINE_START", "Started AudiobookGenerator pipeline")
             
             # Simple header output
-            print("🚀 Section-based Pipeline", file=sys.stderr)
+            print("🚀 Section-based Pipeline")
             project_name = config.get('metadata', {}).get('project_name', 'Unknown')
             tts_engine = config.get('metadata', {}).get('tts_engine', 'unknown').upper()
             rvc_voice = config.get('metadata', {}).get('rvc_voice', 'none')
-            print(f"📁 Project: {project_name} | 🎤 Engine: {tts_engine} | 🎭 RVC: {rvc_voice}", file=sys.stderr)
+            print(f"📁 Project: {project_name} | 🎤 Engine: {tts_engine} | 🎭 RVC: {rvc_voice}")
             print()
             
+            # ENHANCED: Debug current state
+            self._debug_current_state()
+            
             # Phase 1: Preprocessing and section creation
-            if not self._is_phase_complete('preprocessing'):
+            # FIXED: Force preprocessing if no sections exist, regardless of phase status
+            preprocessing_needed = (not self._is_phase_complete('preprocessing') or 
+                                  self.progress['sections']['total'] == 0)
+            
+            if preprocessing_needed:
+                if self.progress['sections']['total'] == 0:
+                    print("📝 No sections found - forcing preprocessing phase")
+                    # Reset preprocessing phase status
+                    if 'phases' not in self.progress:
+                        self.progress['phases'] = {}
+                    self.progress['phases']['preprocessing'] = {'complete': False}
+                    self._save_progress()
+                
                 if not self._run_preprocessing():
                     return False
+            else:
+                print("📝 Phase 1: Preprocessing already complete")
             
             # Phase 2: Section processing loop
             if not self._run_section_processing():
@@ -69,17 +98,33 @@ class PipelineManager:
             else:
                 self._log_checkpoint("PIPELINE_COMPLETE", "Pipeline completed successfully")
             
-            print("\n🎉 Pipeline completed successfully!", file=sys.stderr)
+            print("\n🎉 Pipeline completed successfully!")
             final_path = self.progress['paths']['final']
-            print(f"🎵 Final audio: {final_path}", file=sys.stderr)
+            print(f"🎵 Final audio: {final_path}")
             
             return True
             
         except Exception as e:
-            print(f"❌ Pipeline error: {e}", file=sys.stderr)
+            print(f"❌ Pipeline error: {e}")
             self._log_checkpoint("PIPELINE_ERROR", f"Pipeline failed: {e}")
             self._update_progress({'error': str(e), 'failed_at': datetime.now().isoformat()})
             return False
+    
+    def _debug_current_state(self):
+        """Debug current pipeline state"""
+        print("🔍 Debug: Current pipeline state:")
+        print(f"   Preprocessing complete: {self._is_phase_complete('preprocessing')}")
+        print(f"   Total sections: {self.progress['sections']['total']}")
+        print(f"   Completed sections: {len(self.progress['sections']['completed'])}")
+        print(f"   Remaining sections: {len(self.progress['sections']['remaining'])}")
+        
+        # Check if section files exist
+        sections_dir = Path(self.progress['paths']['sections_dir'])
+        if sections_dir.exists():
+            section_txt_files = list(sections_dir.glob("section_*.txt"))
+            print(f"   Section files on disk: {len(section_txt_files)}")
+        else:
+            print(f"   Sections directory doesn't exist: {sections_dir}")
     
     def _initialize_progress(self, source_file: str, paths: Dict[str, Path], 
                         config: Dict[str, Any], sections: Optional[List[int]], 
@@ -120,7 +165,7 @@ class PipelineManager:
     
     def _run_preprocessing(self) -> bool:
         """Phase 1: Text preprocessing and section creation"""
-        print("📝 Phase 1: Preprocessing and Section Creation", file=sys.stderr)
+        print("📝 Phase 1: Preprocessing and Section Creation")
         
         start_time = time.time()
         self._log_checkpoint("PREPROCESSING_START", "Beginning text extraction and section creation")
@@ -141,27 +186,55 @@ class PipelineManager:
             batch_dir = Path(self.progress['paths']['batch_dir'])
             clean_text_file = batch_dir / "clean_text.txt"
             
+            print(f"   📖 Extracting text from: {Path(source_file).name}")
+            
             text_start_time = time.time()
             if not preprocess_file(source_file, clean_text_file, config):
-                print("❌ Text preprocessing failed", file=sys.stderr)
+                print("❌ Text preprocessing failed")
                 self._log_checkpoint("TEXT_PROCESSING_FAILED", "Failed to extract and clean text from source")
                 return False
             text_duration = time.time() - text_start_time
             
             # Read text to get word count for logging
+            if not clean_text_file.exists():
+                print(f"❌ Clean text file not created: {clean_text_file}")
+                return False
+                
             with open(clean_text_file, 'r', encoding='utf-8') as f:
                 text = f.read()
+            
+            if not text.strip():
+                print("❌ No text content extracted from source file")
+                return False
+                
             word_count = len(text.split())
+            print(f"   ✅ Extracted {word_count:,} words in {text_duration:.1f}s")
             
             self._log_checkpoint("TEXT_PROCESSING_COMPLETE", f"Extracted {word_count:,} words in {text_duration:.1f}s")
             
             # Step 2: Split into sections
+            print("   ✂️ Splitting text into sections...")
             section_manager = SectionManager(config)
             sections = section_manager.split_text_into_sections(text)
             
+            if not sections:
+                print("❌ No sections created from text")
+                return False
+            
+            print(f"   ✅ Created {len(sections)} sections")
+            
             # Step 3: Save sections to organized sections folder
             sections_dir = Path(self.progress['paths']['sections_dir'])
+            sections_dir.mkdir(parents=True, exist_ok=True)
+            
+            print(f"   💾 Saving sections to: {sections_dir}")
             section_files = section_manager.save_sections(sections, batch_dir)
+            
+            if not section_files:
+                print("❌ Failed to save section files")
+                return False
+            
+            print(f"   ✅ Saved {len(section_files)} section files")
             
             # Update progress
             self.progress['sections']['total'] = len(sections)
@@ -172,25 +245,44 @@ class PipelineManager:
             
             duration = time.time() - start_time
             self._log_checkpoint("PREPROCESSING_COMPLETE", f"Created {len(sections)} sections (~30min each) in {duration:.1f}s")
-            print(f"✅ Preprocessing complete: {len(sections)} sections created", file=sys.stderr)
+            print(f"✅ Preprocessing complete: {len(sections)} sections created")
             return True
             
         except Exception as e:
-            print(f"❌ Preprocessing failed: {e}", file=sys.stderr)
+            print(f"❌ Preprocessing failed: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
             self._log_checkpoint("PREPROCESSING_ERROR", f"Preprocessing failed: {str(e)}")
             return False
     
     def _run_section_processing(self) -> bool:
         """Phase 2: Process each section through TTS → RVC → Combine"""
-        print("\n🎤 Phase 2: Section Processing", file=sys.stderr)
+        print("\n🎤 Phase 2: Section Processing")
+        
+        # FIXED: Ensure sections key exists and has required sub-keys
+        if 'sections' not in self.progress:
+            self.progress['sections'] = {
+                'total': 0,
+                'completed': [],
+                'current': None,
+                'remaining': [],
+                'files': {}
+            }
+            self._save_progress()
         
         sections_info = self.progress['sections']
-        total_sections = sections_info['total']
-        remaining_sections = sections_info['remaining']
+        total_sections = sections_info.get('total', 0)
+        remaining_sections = sections_info.get('remaining', [])
+        
+        if total_sections == 0:
+            print("❌ No sections found. Preprocessing may have failed.")
+            return False
         
         if not remaining_sections:
-            print("✅ All sections already processed", file=sys.stderr)
+            print("✅ All sections already processed")
             return True
+        
+        print(f"   📊 Processing {len(remaining_sections)} of {total_sections} sections")
         
         # Process each remaining section
         for section_num in remaining_sections[:]:
@@ -204,7 +296,7 @@ class PipelineManager:
             """Process a single section: TTS → RVC → Combine"""
             section_start_time = time.time()
             
-            print(f"\n🎯 Processing Section {section_num}", file=sys.stderr)
+            print(f"\n🎯 Processing Section {section_num}")
             
             self.progress['sections']['current'] = section_num
             self._save_progress()
@@ -214,7 +306,7 @@ class PipelineManager:
                 section_file = sections_dir / f"section_{section_num:03d}.txt"
                 
                 if not section_file.exists():
-                    print(f"❌ Section file not found: {section_file}", file=sys.stderr)
+                    print(f"❌ Section file not found: {section_file}")
                     self._log_checkpoint(f"SECTION_{section_num}_ERROR", f"Section {section_num} file not found")
                     return False
                 
@@ -223,6 +315,8 @@ class PipelineManager:
                     section_text = f.read()
                 word_count = len(section_text.split())
                 estimated_audio_minutes = word_count / 150  # 150 words per minute
+                
+                print(f"   📝 {word_count} words (~{estimated_audio_minutes:.1f}min audio)")
                 
                 self._log_checkpoint(f"SECTION_{section_num}_START", f"Section {section_num}: {word_count} words (~{estimated_audio_minutes:.1f}min audio)")
                 
@@ -259,12 +353,12 @@ class PipelineManager:
                 # Simple completion message
                 completed_count = len(self.progress['sections']['completed'])
                 total_sections = self.progress['sections']['total']
-                print(f"✅ Section {section_num} complete ({completed_count}/{total_sections})", file=sys.stderr)
+                print(f"✅ Section {section_num} complete ({completed_count}/{total_sections})")
                 
                 # Step 3: Add to master file (this can fail without losing section progress)
                 master_start_time = time.time()
                 if not self._combine_with_master(section_num):
-                    print(f"⚠️ Master combination failed, but section {section_num} processing is complete", file=sys.stderr)
+                    print(f"⚠️ Master combination failed, but section {section_num} processing is complete")
                     self._log_checkpoint(f"SECTION_{section_num}_MASTER_FAILED", f"Section {section_num} master combination failed (section saved)")
                     # Don't return False - the section work is done, just master combination failed
                 else:
@@ -278,13 +372,15 @@ class PipelineManager:
                 return True
                 
             except Exception as e:
-                print(f"❌ Section {section_num} failed: {e}", file=sys.stderr)
+                print(f"❌ Section {section_num} failed: {e}")
+                import traceback
+                print(f"❌ Traceback: {traceback.format_exc()}")
                 self._log_checkpoint(f"SECTION_{section_num}_ERROR", f"Section {section_num} failed: {e}")
                 return False
                         
     def _run_section_tts(self, section_num: int, section_file: Path) -> bool:
         """Run TTS engine on a single section"""
-        print("  🎤 TTS Generation...", file=sys.stderr)
+        print("  🎤 TTS Generation...")
         
         try:
             from engines import get_engine_processor
@@ -305,7 +401,7 @@ class PipelineManager:
             generated_files = processor(str(section_file), str(temp_dir), config, self.progress['paths'])
             
             if not generated_files:
-                print(f"❌ TTS generation failed for section {section_num}", file=sys.stderr)
+                print(f"❌ TTS generation failed for section {section_num}")
                 return False
             
             # Combine TTS chunks for this section
@@ -317,22 +413,26 @@ class PipelineManager:
             silence_gap = config['audio']['silence_gap']
             
             if not combine_audio_files(generated_files, str(section_tts_file), silence_gap):
-                print(f"❌ TTS audio combination failed for section {section_num}", file=sys.stderr)
+                print(f"❌ TTS audio combination failed for section {section_num}")
                 return False
             
             # Store TTS file path
+            if 'files' not in self.progress['sections']:
+                self.progress['sections']['files'] = {}
             self.progress['sections']['files'][f'section_{section_num}_tts'] = str(section_tts_file)
             self._save_progress()
             
-            print("✅ TTS complete", file=sys.stderr)
+            print("✅ TTS complete")
             return True
             
         except Exception as e:
-            print(f"❌ TTS failed for section {section_num}: {e}", file=sys.stderr)
+            print(f"❌ TTS failed for section {section_num}: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
             return False
     
     def _run_section_rvc(self, section_num: int) -> bool:
-        print("  🎭 RVC Processing...", file=sys.stderr)
+        print("  🎭 RVC Processing...")
         
         try:
             from audio.rvc_processor import process_audio_through_rvc
@@ -356,7 +456,7 @@ class PipelineManager:
             self._show_rvc_progress(section_num, total_sections, completed_sections)
             
             if not process_audio_through_rvc(tts_file, str(rvc_file), config):
-                print(f"❌ RVC processing failed for section {section_num}", file=sys.stderr)
+                print(f"❌ RVC processing failed for section {section_num}")
                 return False
             
             # Record RVC timing for future ETA calculations
@@ -367,14 +467,16 @@ class PipelineManager:
             self._save_progress()
             
             # Store RVC file path
+            if 'files' not in self.progress['sections']:
+                self.progress['sections']['files'] = {}
             self.progress['sections']['files'][f'section_{section_num}_rvc'] = str(rvc_file)
             self._save_progress()
             
-            print("✅ RVC complete", file=sys.stderr)
+            print("✅ RVC complete")
             return True
             
         except Exception as e:
-            print(f"❌ RVC failed for section {section_num}: {e}", file=sys.stderr)
+            print(f"❌ RVC failed for section {section_num}: {e}")
             return False
     
     def _show_rvc_progress(self, current_section: int, total_sections: int, completed_sections: int):
@@ -454,7 +556,7 @@ class PipelineManager:
             progress_line = f"{prefix}[{bar}]{suffix}"
         
         # Print the progress bar
-        print(f"{progress_line}", file=sys.stderr)
+        print(f"{progress_line}")
     
     def _combine_with_master(self, section_num: int) -> bool:
         """Add completed section to master file"""
@@ -471,13 +573,13 @@ class PipelineManager:
                 section_file = self.progress['sections']['files'][f'section_{section_num}_rvc']
             
             if not combine_master_file(str(section_file), str(master_file)):
-                print(f"❌ Failed to add section {section_num} to master file", file=sys.stderr)
+                print(f"❌ Failed to add section {section_num} to master file")
                 return False
             
             return True
             
         except Exception as e:
-            print(f"❌ Master combination failed for section {section_num}: {e}", file=sys.stderr)
+            print(f"❌ Master combination failed for section {section_num}: {e}")
             return False
     
     def _run_cleanup(self):
@@ -519,7 +621,7 @@ class PipelineManager:
         self._save_progress()
         
         # Simple stderr logging
-        print(f"CHECKPOINT [{timestamp}] {checkpoint_type}: {message}", file=sys.stderr)
+        print(f"CHECKPOINT [{timestamp}] {checkpoint_type}: {message}")
     
     def _load_progress(self) -> Dict[str, Any]:
         """Load progress from file and reconstruct state from checkpoints"""
@@ -607,11 +709,11 @@ class PipelineManager:
         progress['sections'] = sections
         
         # Debug info
-        print(f"🔄 Reconstructed state from {len(checkpoints)} checkpoints:", file=sys.stderr)
-        print(f"   Completed sections: {sorted(list(completed_sections))}", file=sys.stderr)
-        print(f"   Current section: {current_section}", file=sys.stderr)
-        print(f"   Remaining sections: {sorted(list(remaining_sections))}", file=sys.stderr)
-        print(f"   Tracked files: {len(section_files)}", file=sys.stderr)
+        print(f"🔄 Reconstructed state from {len(checkpoints)} checkpoints:")
+        print(f"   Completed sections: {sorted(list(completed_sections))}")
+        print(f"   Current section: {current_section}")
+        print(f"   Remaining sections: {sorted(list(remaining_sections))}")
+        print(f"   Tracked files: {len(section_files)}")
     
     def _save_progress(self):
         """Save progress to file"""
